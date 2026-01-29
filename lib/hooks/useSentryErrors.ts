@@ -15,8 +15,11 @@ const fetcher = async (url: string) => {
  * @returns SWR response with errors data
  */
 export function useSentryErrors(isAuthenticated: boolean) {
+  // Only fetch on client-side to prevent SSR/build-time API calls
+  const shouldFetch = typeof window !== 'undefined' && isAuthenticated;
+  
   return useSWR(
-    isAuthenticated ? "/api/sentry/errors" : null,
+    shouldFetch ? "/api/sentry/errors" : null,
     fetcher,
     {
       refreshInterval: 60000, // Refresh every 60 seconds

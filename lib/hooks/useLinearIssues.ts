@@ -15,8 +15,11 @@ const fetcher = async (url: string) => {
  * @returns SWR response with Linear issues data
  */
 export function useLinearIssues(isAuthenticated: boolean) {
+  // Only fetch on client-side to prevent SSR/build-time API calls
+  const shouldFetch = typeof window !== 'undefined' && isAuthenticated;
+  
   return useSWR(
-    isAuthenticated ? "/api/linear/issues" : null,
+    shouldFetch ? "/api/linear/issues" : null,
     fetcher,
     {
       refreshInterval: 120000, // Refresh every 2 minutes
