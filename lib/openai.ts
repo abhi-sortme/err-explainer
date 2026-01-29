@@ -242,11 +242,12 @@ ${errorContext}
 
 YOUR UNIQUE STYLE:
 ✨ Be conversational and warm - write like you're explaining to a friend over coffee
-🎯 Use creative analogies and real-world comparisons (e.g., "Think of your database like a library...")
+🎯 Use CLEAR, DIRECT analogies only when they genuinely help understanding (e.g., "Think of your database like a library with strict rules...")
 💡 Show empathy - acknowledge frustration ("I know errors can be frustrating, but here's the good news...")
-🔥 Make it memorable - use vivid language and specific examples
+🔥 Be specific and clear - use concrete, real-world examples, NOT abstract metaphors
 🚀 Be optimistic and encouraging - focus on solutions, not just problems
-⚡ Avoid boring corporate/technical speak - be human and relatable!
+⚡ Avoid confusing metaphors - NO abstract phrases like "where the music stopped" or "the stage where drama unfolded"
+✅ Use REAL paraphrases - explain what actually happened in plain, direct language
 
 CRITICAL REQUIREMENTS:
 1. Start with empathy - acknowledge the frustration
@@ -259,18 +260,19 @@ CRITICAL REQUIREMENTS:
 Please provide your response in the following JSON format:
 {
   "overview": "The exact error title/message as it appears (e.g., 'Illuminate\\Database\\QueryException: SQLSTATE[23000]: Integrity constraint violation...')",
-  "aiErrorExplanation": "A UNIQUE, warm, conversational explanation that:
-    - Starts with empathy or acknowledgment (e.g., 'Ah, this is a classic case of...' or 'Here's what's happening behind the scenes...')
-    - Uses a creative analogy or metaphor to explain the error
-    - Specifically names the table/field/component involved
-    - Explains WHY it happened in relatable terms
+  "aiErrorExplanation": "A clear, warm, conversational explanation that:
+    - Starts with empathy or acknowledgment (e.g., 'Ah, this is a classic case of...' or 'Here's what's happening...')
+    - Uses DIRECT, CLEAR language - explain what actually happened, NOT abstract metaphors
+    - Specifically names the table/field/component/file involved
+    - Explains WHY it happened in simple, concrete terms
+    - Uses real-world examples ONLY when they genuinely clarify (e.g., 'like trying to add a book to a library shelf that doesn't exist')
     - Ends with an encouraging note
-    Keep it 4-5 sentences and make it MEMORABLE and SPECIFIC to this exact error - avoid generic language!",
+    Keep it 4-5 sentences. Be SPECIFIC and CLEAR - avoid confusing metaphors like 'music stopped playing' or 'stage where drama unfolded'. Use REAL paraphrases!",
   "detailedBreakdown": {
-    "whatHappened": "Paint a vivid picture of what exactly happened - use an analogy if helpful. Be specific about the action that failed. (3-4 sentences with personality)",
-    "whereItHappened": "Pinpoint the EXACT location - mention specific file names, functions, or components. Make it feel like you're giving them a map with an X marking the spot. (2-3 sentences)",
-    "whyItHappened": "Dig into the root cause with a relatable explanation. Think 'detective solving a mystery' - what's the real culprit? Use an analogy if it helps. (3-4 sentences with insight)",
-    "whenItHappened": "Explain the trigger conditions in everyday language. When does this monster show up? (2-3 sentences with context)"
+    "whatHappened": "Explain clearly what exactly happened - be specific about the action that failed. Use concrete, direct language. NO abstract metaphors. (3-4 sentences)",
+    "whereItHappened": "Pinpoint the EXACT location - mention specific file names, functions, or components with line numbers if available. Be direct and clear. (2-3 sentences)",
+    "whyItHappened": "Explain the root cause clearly. Use simple, direct language. Only use analogies if they genuinely help understanding (e.g., 'like trying to reference something that doesn't exist'). (3-4 sentences)",
+    "whenItHappened": "Explain the trigger conditions in clear, everyday language. When does this error occur? Be specific. (2-3 sentences)"
   },
   "severity": "low" | "medium" | "high" | "critical",
   "impact": {
@@ -281,8 +283,8 @@ Please provide your response in the following JSON format:
   "errorComponents": [
     {
       "component": "Specific component/file/function name",
-      "issue": "What's broken - be specific and visual",
-      "explanation": "Explain like you're showing someone the broken part. Use analogies. (2-3 engaging sentences)"
+      "issue": "What's broken - be specific and clear",
+      "explanation": "Explain clearly what's wrong with this component. Use direct language, avoid abstract metaphors. (2-3 clear sentences)"
     }
   ],
   "possibleCauses": [
@@ -316,16 +318,22 @@ Please provide your response in the following JSON format:
 GOLDEN RULES FOR EXCEPTIONAL EXPLANATIONS:
 🎯 BE SPECIFIC - Name exact files, tables, fields, functions, LINE NUMBERS
 📍 USE CODE REFERENCES - Always point to specific file:line locations from the stack trace
-🎨 BE CREATIVE - Use unique analogies that fit THIS error
+✅ BE CLEAR AND DIRECT - Use real paraphrases, NOT abstract metaphors like "music stopped" or "stage where drama unfolded"
+💡 USE CONCRETE LANGUAGE - Explain what actually happened in plain terms
+🎨 USE ANALOGIES SPARINGLY - Only when they genuinely clarify (e.g., "like a library rule" is clear, "where music stopped" is confusing)
 ❤️ BE EMPATHETIC - Show you understand frustration
-🔥 BE MEMORABLE - Make them say "Wow, that makes so much sense!"
+🔥 BE MEMORABLE - Make them say "Wow, that makes so much sense!" through clarity, not confusion
 ⚡ BE ACTIONABLE - Give concrete next steps with exact locations
 📊 USE ALL DATA - Reference breadcrumbs, request context, environment info
 🚫 NEVER BE GENERIC - Avoid phrases like "something went wrong", "there was an issue", "the system encountered an error"
+🚫 NO CONFUSING METAPHORS - Avoid abstract phrases that don't directly relate to the error
 
-CRITICAL: In "possibleCauses", ALWAYS include the exact file path and line number from the stack trace or exception details. This is NOT optional - it's the most valuable information for debugging!
+CRITICAL: 
+- In "possibleCauses", ALWAYS include the exact file path and line number from the stack trace
+- Use REAL paraphrases - explain what actually happened, not abstract concepts
+- If you use an analogy, make sure it directly relates to the technical issue (e.g., "like trying to add a book to a shelf that doesn't exist" for database foreign key errors)
 
-Think: If you were explaining this to your non-technical friend at a coffee shop, what would you say to make them go "Ohhh, I get it now!" with a smile? But also give them a treasure map showing EXACTLY where to dig!`;
+Think: If you were explaining this to your non-technical friend at a coffee shop, what would you say to make them go "Ohhh, I get it now!" with clarity and understanding, not confusion!`;
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -382,9 +390,9 @@ Think: If you were explaining this to your non-technical friend at a coffee shop
       },
       errorComponents: [
         {
-          component: errorDetails.culprit || "Mystery Component (detective work needed!)",
-          issue: `This is where the music stopped playing`,
-          explanation: errorDetails.culprit ? `Think of ${errorDetails.culprit} as the stage where this drama unfolded. Something in this part of your code tried to do its job but couldn't complete it. It's like a chef who ran out of a key ingredient halfway through cooking.` : "We're still tracking down the exact location, but the error details above should give us breadcrumbs to follow.",
+          component: errorDetails.culprit || "Unknown Component",
+          issue: `An error occurred in this component`,
+          explanation: errorDetails.culprit ? `The error happened in ${errorDetails.culprit}. This component tried to perform an operation but encountered a problem that prevented it from completing successfully. Check this file for the specific issue causing the error.` : "The exact location is still being determined. Review the error details above to identify where the problem occurred.",
         },
       ],
       possibleCauses: [
