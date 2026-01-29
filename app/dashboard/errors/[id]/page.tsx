@@ -27,10 +27,17 @@ interface ErrorDetails {
   isPublic: boolean;
   platform: string;
   events: any[];
+  linearIssue?: {
+    id: string;
+    identifier: string;
+    title: string;
+    url: string;
+  };
 }
 
 interface AIExplanation {
-  explanation: string;
+  overview: string;
+  aiErrorExplanation: string;
   detailedBreakdown: {
     whatHappened: string;
     whereItHappened: string;
@@ -51,6 +58,7 @@ interface AIExplanation {
   possibleCauses: Array<{
     cause: string;
     likelihood: "low" | "medium" | "high";
+    codeReference?: string;
     explanation: string;
   }>;
   suggestedFixes: Array<{
@@ -76,6 +84,11 @@ export default function ErrorDetailsPage() {
   const [aiError, setAiError] = useState<string | null>(null);
   const [lastFetchTime, setLastFetchTime] = useState<number>(0);
   const [lastAIFetchTime, setLastAIFetchTime] = useState<number>(0);
+  const [linearLoading, setLinearLoading] = useState(false);
+  const [linearError, setLinearError] = useState<string | null>(null);
+  const [linearSuccess, setLinearSuccess] = useState<string | null>(null);
+  const [showLinearInput, setShowLinearInput] = useState(false);
+  const [manualLinearId, setManualLinearId] = useState("");
   const CACHE_DURATION = 120 * 1000; // 2 minutes for error details
   const AI_CACHE_DURATION = 300 * 1000; // 5 minutes for AI explanations
 
@@ -208,6 +221,217 @@ export default function ErrorDetailsPage() {
       setAiError(err instanceof Error ? err.message : "Failed to generate explanation");
     } finally {
       setAiLoading(false);
+    }
+  };
+
+  const forwardToLinear = async (manualIssueId?: string) => {
+    if (!aiExplanation || !errorDetails) {
+      setLinearError("AI explanation is not available");
+      return;
+    }
+
+    console.log("Starting forwardToLinear...");
+
+    setLinearLoading(true);
+    setLinearError(null);
+    setLinearSuccess(null);
+    setShowLinearInput(false);
+
+    try {
+      // Priority 1: Use manual input if provided
+      let linearIssueId: string | undefined = manualIssueId;
+      
+      // Priority 2: Use matched Linear issue from dashboard
+      if (!linearIssueId && errorDetails.linearIssue) {
+        linearIssueId = errorDetails.linearIssue.identifier;
+        console.log("Using matched Linear issue:", linearIssueId);
+      }
+      
+      // Priority 3: Check tags for Linear issue ID (legacy)
+      if (!linearIssueId) {
+        const linearTag = errorDetails.tags?.find(
+          (tag) => tag.key?.toLowerCase().includes("linear") && tag.value
+        );
+        
+        if (linearTag?.value) {
+          const tagValueStr = typeof linearTag.value === 'string' 
+            ? linearTag.value 
+            : JSON.stringify(linearTag.value);
+          
+          const match = tagValueStr.match(/([A-Z]+-\d+)/);
+          linearIssueId = match ? match[1] : tagValueStr;
+        }
+        
+        // Also check metadata for Linear references
+        if (!linearIssueId && errorDetails.metadata) {
+          const metadataStr = JSON.stringify(errorDetails.metadata).toLowerCase();
+          const metadataMatch = metadataStr.match(/([a-z]+-\d+)/);
+          if (metadataMatch) {
+            linearIssueId = metadataMatch[1].toUpperCase();
+          }
+        }
+      }
+
+      // Ensure linearIssueId is a string
+      if (linearIssueId && typeof linearIssueId !== 'string') {
+        console.error("linearIssueId is not a string! Type:", typeof linearIssueId);
+        linearIssueId = String(linearIssueId);
+      }
+
+      // If still no Linear issue ID found, show input dialog
+      if (!linearIssueId) {
+        setLinearLoading(false);
+        setShowLinearInput(true);
+        return;
+      }
+
+      console.log("Using Linear issue ID:", linearIssueId);
+
+      // Create a clean serializable copy using a safer approach
+      // Convert to string first, then parse back to remove all React internals
+      const toPlainText = (val: any): any => {
+        if (val === null || val === undefined) return val;
+        if (typeof val === 'string') return val;
+        if (typeof val === 'number' || typeof val === 'boolean') return val;
+        if (Array.isArray(val)) {
+          return val.map(toPlainText);
+        }
+        if (typeof val === 'object') {
+          // Check if it's a DOM/React element by checking constructor name
+          const constructorName = val.constructor?.name;
+          if (constructorName && (constructorName.includes('Element') || constructorName === 'FiberNode')) {
+            // Extract text content if it's a DOM element
+            return val.textContent || val.innerText || String(val);
+          }
+          
+          // For plain objects, recursively clean all properties
+          const cleaned: any = {};
+          try {
+            for (const key in val) {
+              // Skip React internal properties
+              if (key.startsWith('_') || key.startsWith('__') || key.startsWith('$$')) continue;
+              if (!val.hasOwnProperty(key)) continue;
+              
+              try {
+                cleaned[key] = toPlainText(val[key]);
+              } catch (err) {
+                // Skip properties that can't be accessed
+                console.warn(`Skipping property ${key}:`, err);
+              }
+            }
+          } catch (err) {
+            return String(val);
+          }
+          return cleaned;
+        }
+        return String(val);
+      };
+
+      console.log("Cleaning AI explanation...");
+      const plainAIExplanation = {
+        overview: toPlainText(aiExplanation.overview),
+        aiErrorExplanation: toPlainText(aiExplanation.aiErrorExplanation),
+        severity: toPlainText(aiExplanation.severity),
+        impact: {
+          userImpact: toPlainText(aiExplanation.impact?.userImpact),
+          systemImpact: toPlainText(aiExplanation.impact?.systemImpact),
+          businessImpact: toPlainText(aiExplanation.impact?.businessImpact),
+        },
+        detailedBreakdown: {
+          whatHappened: toPlainText(aiExplanation.detailedBreakdown?.whatHappened),
+          whereItHappened: toPlainText(aiExplanation.detailedBreakdown?.whereItHappened),
+          whyItHappened: toPlainText(aiExplanation.detailedBreakdown?.whyItHappened),
+          whenItHappened: toPlainText(aiExplanation.detailedBreakdown?.whenItHappened),
+        },
+        errorComponents: toPlainText(aiExplanation.errorComponents) || [],
+        possibleCauses: toPlainText(aiExplanation.possibleCauses) || [],
+        suggestedFixes: toPlainText(aiExplanation.suggestedFixes) || [],
+        preventionTips: toPlainText(aiExplanation.preventionTips) || [],
+      };
+
+      console.log("Cleaned AI explanation successfully");
+
+      // Test serialization before sending
+      let requestBody;
+      try {
+        requestBody = {
+          errorId: String(errorDetails.id),
+          aiExplanation: plainAIExplanation,
+          linearIssueId: String(linearIssueId),
+          assigneeId: errorDetails.assignedTo?.id ? String(errorDetails.assignedTo.id) : null,
+        };
+        
+        // Test if it can be serialized
+        const testSerialize = JSON.stringify(requestBody);
+        console.log("Serialization test passed, sending request...");
+      } catch (serializeError) {
+        console.error("Serialization test failed:", serializeError);
+        throw new Error("Failed to prepare data for Linear. The AI explanation contains unsupported data types.");
+      }
+
+      const response = await fetch("/api/linear/forward", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const data = await response.json();
+      
+      console.log("Linear API response:", data);
+
+      if (!response.ok) {
+        // Log detailed error information
+        console.error("Linear API error details:", {
+          error: data.error,
+          message: data.message,
+          details: data.details,
+          fullResponse: data
+        });
+        
+        // If error is about missing/invalid Linear issue ID, show input dialog
+        const errorMessage = JSON.stringify(data).toLowerCase();
+        if (
+          errorMessage.includes("linear issue id") || 
+          errorMessage.includes("entity not found") ||
+          errorMessage.includes("could not find") ||
+          errorMessage.includes("issue not found")
+        ) {
+          const issueIdStr = linearIssueId ? String(linearIssueId) : '';
+          setLinearError(`Could not find Linear issue${issueIdStr ? ` "${issueIdStr}"` : ''}. Please enter the correct issue ID.`);
+          setShowLinearInput(true);
+          return;
+        }
+        
+        // For other errors, show the error message
+        const errorMsg = data.details?.[0]?.extensions?.userPresentableMessage || 
+                        data.details?.[0]?.message ||
+                        data.message || 
+                        data.error || 
+                        "Failed to forward to Linear";
+        throw new Error(errorMsg);
+      }
+
+      setLinearSuccess(
+        data.issue?.url 
+          ? `Successfully forwarded to Linear: ${data.issue.identifier}`
+          : "Successfully forwarded to Linear"
+      );
+      
+      // Clear success message after 5 seconds
+      setTimeout(() => setLinearSuccess(null), 5000);
+    } catch (err) {
+      console.error("Error forwarding to Linear:", err);
+      const errorMessage = err instanceof Error ? err.message : "Failed to forward to Linear";
+      setLinearError(errorMessage);
+      
+      // If it's about missing Linear ID, show input dialog
+      if (errorMessage.includes("Linear issue ID") || errorMessage.includes("not found")) {
+        setShowLinearInput(true);
+      }
+    } finally {
+      setLinearLoading(false);
     }
   };
 
@@ -448,14 +672,91 @@ export default function ErrorDetailsPage() {
                 <div className="mb-6 rounded-xl bg-gradient-to-br from-purple-500/20 via-pink-500/20 to-cyan-500/20 backdrop-blur-xl p-6 border border-purple-500/30 relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-48 h-48 bg-purple-500/10 rounded-full blur-3xl"></div>
                   <div className="relative z-10">
-                    <div className="mb-3 flex items-center gap-2">
-                      <div className="rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 p-2">
-                        <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                        </svg>
+                    <div className="mb-3 flex items-center justify-between flex-wrap gap-3">
+                      <div className="flex items-center gap-2">
+                        <div className="rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 p-2">
+                          <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                          </svg>
+                        </div>
+                        <h3 className="text-lg font-semibold bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">AI Error Explanation</h3>
                       </div>
-                      <h3 className="text-lg font-semibold bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">AI Error Explanation</h3>
+                      <button
+                        onClick={() => forwardToLinear()}
+                        disabled={linearLoading}
+                        className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-purple-500/30 transition-all hover:shadow-xl hover:shadow-purple-500/50 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                      >
+                        {linearLoading ? (
+                          <>
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                            <span>Forwarding...</span>
+                          </>
+                        ) : (
+                          <>
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                            </svg>
+                            <span>Forward to Linear</span>
+                          </>
+                        )}
+                      </button>
                     </div>
+                    {linearError && (
+                      <div className="mb-3 rounded-lg bg-red-900/40 border border-red-500/30 p-3">
+                        <p className="text-sm text-red-300">{linearError}</p>
+                      </div>
+                    )}
+                    {linearSuccess && (
+                      <div className="mb-3 rounded-lg bg-green-900/40 border border-green-500/30 p-3">
+                        <p className="text-sm text-green-300">{linearSuccess}</p>
+                      </div>
+                    )}
+                    {showLinearInput && (
+                      <div className="mb-3 rounded-lg bg-slate-800/80 border border-purple-500/30 p-4">
+                        <p className="text-sm text-purple-300 mb-3">
+                          {linearError ? linearError : "Linear issue ID not found in Sentry tags. Please enter the Linear issue identifier (e.g., ABC-123):"}
+                        </p>
+                        <p className="text-xs text-gray-400 mb-3">
+                          💡 Tip: You can find the issue ID in your Linear workspace. It looks like "TEAM-123" (e.g., ENG-456, PRODUCT-789).
+                        </p>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={manualLinearId}
+                            onChange={(e) => setManualLinearId(e.target.value)}
+                            placeholder="e.g., ABC-123"
+                            className="flex-1 rounded-lg bg-slate-900/50 border border-purple-500/30 px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && manualLinearId.trim()) {
+                                forwardToLinear(manualLinearId.trim());
+                              }
+                            }}
+                          />
+                          <button
+                            onClick={() => forwardToLinear(manualLinearId.trim())}
+                            disabled={!manualLinearId.trim() || linearLoading}
+                            className="rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-purple-500/30 transition-all hover:shadow-xl hover:shadow-purple-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Forward
+                          </button>
+                          <button
+                            onClick={() => {
+                              setShowLinearInput(false);
+                              setManualLinearId("");
+                              setLinearError(null);
+                            }}
+                            className="rounded-lg bg-slate-700/50 border border-purple-500/30 px-4 py-2 text-sm font-semibold text-purple-300 transition-all hover:bg-slate-700/70"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        {errorDetails.tags && errorDetails.tags.length > 0 && (
+                          <p className="text-xs text-gray-400 mt-2">
+                            Available tags: {errorDetails.tags.map(t => `${t.key}=${t.value}`).join(", ")}
+                          </p>
+                        )}
+                      </div>
+                    )}
                     <p className="text-base leading-relaxed text-purple-100">
                       {aiExplanation.aiErrorExplanation}
                     </p>

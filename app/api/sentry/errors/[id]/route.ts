@@ -1,8 +1,59 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
+import { matchLinearIssue, type SentryError, type LinearIssue } from "@/lib/utils/linear-matcher";
 
 // Cache error details for 120 seconds (2 minutes)
 export const revalidate = 120;
+
+// Helper function to fetch Linear issues from Sortme/Triage
+async function fetchLinearIssues(linearApiKey: string): Promise<LinearIssue[]> {
+  try {
+    const query = {
+      query: `
+        query GetSortmeTriageIssues {
+          issues(
+            filter: {
+              team: {
+                name: { eq: "Sortme" }
+              }
+              state: {
+                name: { eq: "Triage" }
+              }
+            }
+            first: 100
+            orderBy: updatedAt
+          ) {
+            nodes {
+              id
+              identifier
+              title
+              description
+              url
+            }
+          }
+        }
+      `,
+    };
+
+    const response = await fetch("https://api.linear.app/graphql", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: linearApiKey,
+      },
+      body: JSON.stringify(query),
+      next: { revalidate: 120 },
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return data.data?.issues?.nodes || [];
+    }
+  } catch (error) {
+    console.error("Failed to fetch Linear issues:", error);
+  }
+  return [];
+}
 
 export async function GET(
   request: Request,
@@ -177,6 +228,14 @@ async function processIssueData(issueData: any, errorId: string, projectSlug: st
     console.error("Failed to fetch events:", err);
   }
 
+  // Fetch Linear issues and match with this error
+  let linearIssue = undefined;
+  const linearApiKey = process.env.LINEAR_API_KEY;
+  if (linearApiKey) {
+    const linearIssues = await fetchLinearIssues(linearApiKey);
+    linearIssue = matchLinearIssue(issueData.title, errorId, linearIssues);
+  }
+
   // Transform the data
   const errorDetails = {
     id: issueData.id,
@@ -200,6 +259,7 @@ async function processIssueData(issueData: any, errorId: string, projectSlug: st
     isPublic: issueData.isPublic || false,
     platform: issueData.platform || "",
     events: events.slice(0, 10), // Limit to 10 most recent events
+    linearIssue: linearIssue,
   };
 
   return NextResponse.json({ data: errorDetails });

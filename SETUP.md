@@ -171,3 +171,8 @@ This is used to generate AI-powered, human-friendly explanations of errors.
 - Verify your auth token has the correct scopes
 - Check that org and project slugs are correct (case-sensitive)
 - Ensure your Sentry account has access to the organization/project
+
+### Linear API Issues
+- Get your API key from https://linear.app/settings/api
+- Ensure the Linear issue ID is stored in Sentry tags (typically as a tag with key containing "linear")
+- The system will automatically extract Linear issue identifiers (e.g., "ABC-123") from Sentry tags
