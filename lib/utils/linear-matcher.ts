@@ -63,7 +63,7 @@ export function matchLinearIssue(
   let bestMatch: LinearIssue | null = null;
   let bestScore = 0;
 
-  linearIssues.forEach((issue) => {
+  for (const issue of linearIssues) {
     const linearTitle = issue.title.toLowerCase().trim();
     const linearDescription = (issue.description || "").toLowerCase();
     const linearUrl = (issue.url || "").toLowerCase();
@@ -73,7 +73,7 @@ export function matchLinearIssue(
       console.log(`✅ Match found by ID: ${issue.identifier} contains Sentry ID ${sentryId}`);
       bestMatch = issue;
       bestScore = 100;
-      return;
+      break;
     }
 
     // Priority 2: Check if Linear URL contains the Sentry error ID (100% match)
@@ -81,7 +81,7 @@ export function matchLinearIssue(
       console.log(`✅ Match found by URL: ${issue.identifier} URL contains Sentry ID ${sentryId}`);
       bestMatch = issue;
       bestScore = 100;
-      return;
+      break;
     }
 
     // Priority 3: Fuzzy matching by title similarity
@@ -91,7 +91,7 @@ export function matchLinearIssue(
       bestScore = similarity;
       bestMatch = issue;
     }
-  });
+  }
 
   if (bestMatch) {
     if (bestScore === 100) {
