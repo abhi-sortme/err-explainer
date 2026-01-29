@@ -1,8 +1,81 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Error Explainer - Sentry Dashboard
+
+A Next.js dashboard application for viewing Sentry errors with Google OAuth authentication.
+
+## Features
+
+- 🔐 Google OAuth authentication using NextAuth.js
+- 📊 Dashboard displaying Sentry errors
+- 🎨 Modern UI with Tailwind CSS
+- 🔒 Protected routes with middleware
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 18+ installed
+- A Google Cloud project with OAuth credentials
+- A Sentry account with API access
+
+### Installation
+
+1. Install dependencies:
+
+```bash
+npm install
+# or
+yarn install
+# or
+pnpm install
+```
+
+2. Create a `.env.local` file in the root directory with the following variables:
+
+```env
+# NextAuth.js Configuration
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=your-nextauth-secret-here-generate-with-openssl-rand-base64-32
+
+# Google OAuth Credentials
+# Get these from https://console.cloud.google.com/apis/credentials
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+
+# Sentry API Configuration
+# Get your auth token from https://sentry.io/settings/account/api/auth-tokens/
+SENTRY_AUTH_TOKEN=your-sentry-auth-token
+SENTRY_ORG=your-sentry-organization-slug
+SENTRY_PROJECT=your-sentry-project-slug
+```
+
+### Setting up Google OAuth
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select an existing one
+3. Enable the Google+ API
+4. Go to "Credentials" → "Create Credentials" → "OAuth 2.0 Client ID"
+5. Set authorized redirect URIs to: `http://localhost:3000/api/auth/callback/google`
+6. Copy the Client ID and Client Secret to your `.env.local` file
+
+### Setting up Sentry API
+
+1. Go to [Sentry Settings](https://sentry.io/settings/account/api/auth-tokens/)
+2. Create a new auth token with `project:read` and `org:read` scopes
+3. Copy the token to `SENTRY_AUTH_TOKEN` in your `.env.local` file
+4. Find your organization slug (visible in your Sentry URL: `sentry.io/organizations/[org-slug]/`)
+5. Find your project slug (visible in your Sentry URL: `sentry.io/organizations/[org-slug]/projects/[project-slug]/`)
+
+### Generate NextAuth Secret
+
+Run this command to generate a secure secret:
+
+```bash
+openssl rand -base64 32
+```
+
+Copy the output to `NEXTAUTH_SECRET` in your `.env.local` file.
+
+### Running the Development Server
 
 ```bash
 npm run dev
@@ -10,27 +83,20 @@ npm run dev
 yarn dev
 # or
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) with your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Project Structure
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `app/login/` - Login page with Google OAuth
+- `app/dashboard/` - Main dashboard displaying Sentry errors
+- `app/api/auth/[...nextauth]/` - NextAuth.js API route handler
+- `app/api/sentry/errors/` - API route for fetching Sentry errors
+- `middleware.ts` - Route protection middleware
 
 ## Learn More
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- [Next.js Documentation](https://nextjs.org/docs)
+- [NextAuth.js Documentation](https://next-auth.js.org/)
+- [Sentry API Documentation](https://docs.sentry.io/api/)
