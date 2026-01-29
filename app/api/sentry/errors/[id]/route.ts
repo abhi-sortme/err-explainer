@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 import { matchLinearIssue, type SentryError, type LinearIssue } from "@/lib/utils/linear-matcher";
 
+export const dynamic = 'force-dynamic'; // Force dynamic rendering since we use auth headers
 // Cache error details for 120 seconds (2 minutes)
 export const revalidate = 120;
 

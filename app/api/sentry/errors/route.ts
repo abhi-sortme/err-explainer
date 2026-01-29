@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 
+export const dynamic = 'force-dynamic'; // Force dynamic rendering since we use auth headers
 // Cache this route for 60 seconds (revalidate every minute)
 export const revalidate = 60;
 

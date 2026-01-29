@@ -1,6 +1,8 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 
+export const dynamic = 'force-dynamic'; // Force dynamic rendering since we use auth headers
+
 export async function POST(request: Request) {
   try {
     const session = await auth();

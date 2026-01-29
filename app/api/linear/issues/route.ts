@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 
+export const dynamic = 'force-dynamic'; // Force dynamic rendering since we use auth headers
 export const revalidate = 120; // Cache for 2 minutes
 
 export async function GET() {

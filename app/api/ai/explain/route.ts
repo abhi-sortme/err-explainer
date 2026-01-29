@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 import { explainError } from "@/lib/openai";
 
+export const dynamic = 'force-dynamic'; // Force dynamic rendering since we use auth headers
 // Cache AI explanations for 5 minutes
 export const revalidate = 300;
 
