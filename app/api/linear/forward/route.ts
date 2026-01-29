@@ -243,93 +243,102 @@ export async function POST(request: Request) {
 }
 
 function formatAIExplanationForLinear(aiExplanation: any): string {
-  let description = `# AI Error Explanation\n\n`;
+  let description = `# 🐛 Error Summary\n\n`;
   
-  // Overview
+  // Severity badge
+  if (aiExplanation.severity) {
+    const severityEmoji = {
+      critical: "🔴",
+      high: "🟠",
+      medium: "🟡",
+      low: "🟢"
+    };
+    description += `**Severity:** ${severityEmoji[aiExplanation.severity as keyof typeof severityEmoji] || "⚪"} ${aiExplanation.severity.toUpperCase()}\n\n`;
+  }
+
+  // Brief Overview (truncate if too long)
   if (aiExplanation.overview) {
-    description += `## Overview\n${aiExplanation.overview}\n\n`;
+    const overview = aiExplanation.overview.length > 200 
+      ? aiExplanation.overview.substring(0, 200) + "..."
+      : aiExplanation.overview;
+    description += `## 📋 Overview\n${overview}\n\n`;
   }
 
-  // AI Error Explanation
+  // Main AI Explanation (condensed)
   if (aiExplanation.aiErrorExplanation) {
-    description += `## AI Error Explanation\n${aiExplanation.aiErrorExplanation}\n\n`;
+    const mainExplanation = aiExplanation.aiErrorExplanation.length > 300
+      ? aiExplanation.aiErrorExplanation.substring(0, 300) + "..."
+      : aiExplanation.aiErrorExplanation;
+    description += `## 💡 What's Wrong?\n${mainExplanation}\n\n`;
   }
 
-  // Detailed Breakdown
-  if (aiExplanation.detailedBreakdown) {
-    description += `## Detailed Breakdown\n\n`;
-    if (aiExplanation.detailedBreakdown.whatHappened) {
-      description += `### What Happened?\n${aiExplanation.detailedBreakdown.whatHappened}\n\n`;
-    }
-    if (aiExplanation.detailedBreakdown.whereItHappened) {
-      description += `### Where Did It Happen?\n${aiExplanation.detailedBreakdown.whereItHappened}\n\n`;
-    }
-    if (aiExplanation.detailedBreakdown.whyItHappened) {
-      description += `### Why Did It Happen?\n${aiExplanation.detailedBreakdown.whyItHappened}\n\n`;
-    }
-    if (aiExplanation.detailedBreakdown.whenItHappened) {
-      description += `### When Does It Happen?\n${aiExplanation.detailedBreakdown.whenItHappened}\n\n`;
-    }
+  // Top 2-3 Most Likely Causes (prioritize high likelihood)
+  if (aiExplanation.possibleCauses && aiExplanation.possibleCauses.length > 0) {
+    description += `## 🔍 Top Causes\n\n`;
+    const sortedCauses = [...aiExplanation.possibleCauses].sort((a: any, b: any) => {
+      const likelihoodOrder: { [key: string]: number } = { high: 3, medium: 2, low: 1 };
+      return (likelihoodOrder[b.likelihood] || 0) - (likelihoodOrder[a.likelihood] || 0);
+    });
+    
+    sortedCauses.slice(0, 3).forEach((cause: any, index: number) => {
+      description += `${index + 1}. **${cause.cause}** (${cause.likelihood.toUpperCase()})`;
+      if (cause.codeReference) {
+        description += ` - \`${cause.codeReference}\``;
+      }
+      description += `\n`;
+    });
+    description += `\n`;
   }
 
-  // Error Components
-  if (aiExplanation.errorComponents && aiExplanation.errorComponents.length > 0) {
-    description += `## Error Components\n\n`;
-    aiExplanation.errorComponents.forEach((component: any, index: number) => {
-      description += `### ${component.component}\n`;
-      description += `**Issue:** ${component.issue}\n\n`;
-      description += `${component.explanation}\n\n`;
+  // Top 2-3 Recommended Fixes (prioritize high priority, easy difficulty)
+  if (aiExplanation.suggestedFixes && aiExplanation.suggestedFixes.length > 0) {
+    description += `## ✅ Recommended Solutions\n\n`;
+    const sortedFixes = [...aiExplanation.suggestedFixes].sort((a: any, b: any) => {
+      const priorityOrder: { [key: string]: number } = { high: 3, medium: 2, low: 1 };
+      const difficultyOrder: { [key: string]: number } = { easy: 1, medium: 2, hard: 3 };
+      const aScore = (priorityOrder[a.priority] || 0) * 10 - (difficultyOrder[a.difficulty] || 0);
+      const bScore = (priorityOrder[b.priority] || 0) * 10 - (difficultyOrder[b.difficulty] || 0);
+      return bScore - aScore;
+    });
+    
+    sortedFixes.slice(0, 3).forEach((fix: any, index: number) => {
+      description += `${index + 1}. **${fix.fix}** (${fix.priority.toUpperCase()} priority, ${fix.difficulty.toUpperCase()})\n`;
+      if (fix.steps && fix.steps.length > 0) {
+        // Show only first 2-3 steps
+        fix.steps.slice(0, 3).forEach((step: string, stepIndex: number) => {
+          description += `   ${stepIndex + 1}. ${step}\n`;
+        });
+        if (fix.steps.length > 3) {
+          description += `   ... and ${fix.steps.length - 3} more step(s)\n`;
+        }
+      }
+      description += `\n`;
     });
   }
 
-  // Impact Analysis
+  // Key Impact (condensed)
   if (aiExplanation.impact) {
-    description += `## Impact Analysis\n\n`;
+    description += `## 📊 Impact\n\n`;
     if (aiExplanation.impact.userImpact) {
-      description += `### 👥 User Impact\n${aiExplanation.impact.userImpact}\n\n`;
+      const userImpact = aiExplanation.impact.userImpact.length > 150
+        ? aiExplanation.impact.userImpact.substring(0, 150) + "..."
+        : aiExplanation.impact.userImpact;
+      description += `👥 **Users:** ${userImpact}\n\n`;
     }
     if (aiExplanation.impact.systemImpact) {
-      description += `### ⚙️ System Impact\n${aiExplanation.impact.systemImpact}\n\n`;
+      const systemImpact = aiExplanation.impact.systemImpact.length > 150
+        ? aiExplanation.impact.systemImpact.substring(0, 150) + "..."
+        : aiExplanation.impact.systemImpact;
+      description += `⚙️ **System:** ${systemImpact}\n\n`;
     }
-    if (aiExplanation.impact.businessImpact) {
-      description += `### 💼 Business Impact\n${aiExplanation.impact.businessImpact}\n\n`;
-    }
   }
 
-  // Possible Causes
-  if (aiExplanation.possibleCauses && aiExplanation.possibleCauses.length > 0) {
-    description += `## Possible Causes\n\n`;
-    aiExplanation.possibleCauses.forEach((cause: any, index: number) => {
-      description += `### ${index + 1}. ${cause.cause} (${cause.likelihood.toUpperCase()} Likelihood)\n`;
-      if (cause.codeReference) {
-        description += `**Code Location:** \`${cause.codeReference}\`\n\n`;
-      }
-      description += `${cause.explanation}\n\n`;
-    });
-  }
-
-  // Suggested Fixes
-  if (aiExplanation.suggestedFixes && aiExplanation.suggestedFixes.length > 0) {
-    description += `## Suggested Fixes\n\n`;
-    aiExplanation.suggestedFixes.forEach((fix: any, index: number) => {
-      description += `### ${index + 1}. ${fix.fix} (${fix.priority.toUpperCase()} Priority, ${fix.difficulty.toUpperCase()} Difficulty)\n\n`;
-      if (fix.steps && fix.steps.length > 0) {
-        description += `**Steps:**\n`;
-        fix.steps.forEach((step: string, stepIndex: number) => {
-          description += `${stepIndex + 1}. ${step}\n`;
-        });
-        description += `\n`;
-      }
-    });
-  }
-
-  // Prevention Tips
+  // Quick prevention tip (if available)
   if (aiExplanation.preventionTips && aiExplanation.preventionTips.length > 0) {
-    description += `## Prevention Tips\n\n`;
-    aiExplanation.preventionTips.forEach((tip: string, index: number) => {
-      description += `- ${tip}\n`;
-    });
+    description += `## 💡 Prevention\n${aiExplanation.preventionTips[0]}\n\n`;
   }
+
+  description += `---\n*Summary generated by BugBuddy AI Error Explainer*\n`;
 
   return description;
 }

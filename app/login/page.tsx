@@ -51,7 +51,7 @@ export default function LoginPage() {
 
                     <div className="mb-8 text-center">
                         <h1 className="mb-3 bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-4xl font-bold text-transparent dark:from-indigo-400 dark:to-purple-400">
-                            Smart Error Explainer
+                            BugBuddy
                         </h1>
                         <p className="text-gray-600 dark:text-gray-300">
                             Understand your Sentry errors in plain English with AI-powered explanations
