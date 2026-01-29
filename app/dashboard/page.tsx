@@ -445,7 +445,7 @@ export default function DashboardPage() {
                                             <button
                                                 onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
                                                 disabled={currentPage === 1}
-                                                className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-medium rounded-lg hover:from-purple-700 hover:to-pink-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg shadow-purple-500/30"
+                                                className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-medium rounded-lg hover:from-purple-700 hover:to-pink-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg shadow-purple-500/30 cursor-pointer"
                                             >
                                                 Previous
                                             </button>
@@ -464,7 +464,7 @@ export default function DashboardPage() {
                                                             )}
                                                             <button
                                                                 onClick={() => setCurrentPage(page)}
-                                                                className={`min-w-10 px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${currentPage === page
+                                                                className={`min-w-10 px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 cursor-pointer ${currentPage === page
                                                                     ? "bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/50"
                                                                     : "bg-slate-800/80 text-gray-400 hover:bg-slate-700"
                                                                     }`}
@@ -477,7 +477,7 @@ export default function DashboardPage() {
                                             <button
                                                 onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
                                                 disabled={currentPage === totalPages}
-                                                className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-medium rounded-lg hover:from-purple-700 hover:to-pink-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg shadow-purple-500/30"
+                                                className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-medium rounded-lg hover:from-purple-700 hover:to-pink-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg shadow-purple-500/30 cursor-pointer"
                                             >
                                                 Next
                                             </button>

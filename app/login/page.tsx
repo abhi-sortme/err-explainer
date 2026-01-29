@@ -61,7 +61,7 @@ export default function LoginPage() {
                     <button
                         onClick={handleGoogleSignIn}
                         disabled={isLoading}
-                        className="group relative flex w-full items-center justify-center gap-3 overflow-hidden rounded-xl bg-gradient-to-r from-purple-600 via-pink-600 to-cyan-600 px-6 py-4 font-semibold text-white shadow-lg transition-all duration-300 hover:from-purple-700 hover:via-pink-700 hover:to-cyan-700 hover:shadow-xl hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                        className="group relative flex w-full items-center justify-center gap-3 overflow-hidden rounded-xl bg-gradient-to-r from-purple-600 via-pink-600 to-cyan-600 px-6 py-4 font-semibold text-white shadow-lg transition-all duration-300 hover:from-purple-700 hover:via-pink-700 hover:to-cyan-700 hover:shadow-xl hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 cursor-pointer"
                     >
                         {isLoading ? (
                             <div className="flex items-center gap-2">
