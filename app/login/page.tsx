@@ -30,8 +30,8 @@ export default function LoginPage() {
                     {/* Logo/Icon */}
                     <div className="mb-8 flex justify-center">
                         <div className="relative">
-                            <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 opacity-20 blur-xl"></div>
-                            <div className="relative rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 p-4">
+                            <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-600 opacity-20 blur-xl"></div>
+                            <div className="relative rounded-2xl bg-gradient-to-br from-purple-500 to-pink-600 p-4">
                                 <svg
                                     className="h-12 w-12 text-white"
                                     fill="none"
@@ -42,7 +42,7 @@ export default function LoginPage() {
                                         strokeLinecap="round"
                                         strokeLinejoin="round"
                                         strokeWidth={2}
-                                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                                        d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"
                                     />
                                 </svg>
                             </div>
@@ -50,7 +50,7 @@ export default function LoginPage() {
                     </div>
 
                     <div className="mb-8 text-center">
-                        <h1 className="mb-3 bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-4xl font-bold text-transparent dark:from-indigo-400 dark:to-purple-400">
+                        <h1 className="mb-3 bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-4xl font-bold text-transparent">
                             BugBuddy
                         </h1>
                         <p className="text-gray-600 dark:text-gray-300">
@@ -61,7 +61,7 @@ export default function LoginPage() {
                     <button
                         onClick={handleGoogleSignIn}
                         disabled={isLoading}
-                        className="group relative flex w-full items-center justify-center gap-3 overflow-hidden rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-4 font-semibold text-white shadow-lg transition-all duration-300 hover:from-indigo-700 hover:to-purple-700 hover:shadow-xl hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                        className="group relative flex w-full items-center justify-center gap-3 overflow-hidden rounded-xl bg-gradient-to-r from-purple-600 via-pink-600 to-cyan-600 px-6 py-4 font-semibold text-white shadow-lg transition-all duration-300 hover:from-purple-700 hover:via-pink-700 hover:to-cyan-700 hover:shadow-xl hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                     >
                         {isLoading ? (
                             <div className="flex items-center gap-2">

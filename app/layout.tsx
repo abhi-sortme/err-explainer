@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Smart Error Explainer - Sentry Dashboard",
+  title: "BugBuddy - AI Error Explainer",
   description: "AI-powered dashboard for viewing and understanding Sentry errors in plain English",
 };
 
