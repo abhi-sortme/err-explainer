@@ -60,11 +60,12 @@ These are Google OAuth credentials. Follow these steps:
 1. Application type: Select "Web application"
 2. Name: "Error Explainer Web Client"
 3. Authorized JavaScript origins:
-   - Add: `http://localhost:3000`
-   - Add: `http://localhost:3000/api/auth/callback/google` (if needed)
+   - Add: `http://localhost:3000` (for local development)
+   - Add: `https://yourdomain.com` (for production - replace with your actual domain)
 4. Authorized redirect URIs:
-   - Add: `http://localhost:3000/api/auth/callback/google`
-   - For production, add: `https://yourdomain.com/api/auth/callback/google`
+   - Add: `http://localhost:3000/api/auth/callback/google` (for local development)
+   - Add: `https://yourdomain.com/api/auth/callback/google` (for production - replace with your actual domain)
+   - **Important**: The redirect URI must match EXACTLY, including the protocol (http/https) and trailing slashes
 5. Click "Create"
 
 ### Step 6: Copy Your Credentials

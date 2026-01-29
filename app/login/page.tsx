@@ -104,19 +104,19 @@ export default function LoginPage() {
                             <svg className="h-5 w-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                             </svg>
-                            <span>Real-time error monitoring</span>
+                            <span>AI-powered error explanations in plain English</span>
                         </div>
                         <div className="flex items-center gap-2">
                             <svg className="h-5 w-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                             </svg>
-                            <span>Beautiful, intuitive dashboard</span>
+                            <span>Automatic matching with Linear tickets</span>
                         </div>
                         <div className="flex items-center gap-2">
                             <svg className="h-5 w-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                             </svg>
-                            <span>Secure Google authentication</span>
+                            <span>Actionable solutions for non-developers</span>
                         </div>
                     </div>
                 </div>
