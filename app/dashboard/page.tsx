@@ -4,6 +4,7 @@ import { useSession, signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import useSWR from "swr";
 
 interface SentryError {
     id: string;
@@ -17,59 +18,57 @@ interface SentryError {
     culprit: string;
 }
 
+// Fetcher function for SWR
+const fetcher = async (url: string) => {
+    const res = await fetch(url);
+    if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || "Failed to fetch errors");
+    }
+    const data = await res.json();
+    return data;
+};
+
 export default function DashboardPage() {
     const { data: session, status } = useSession();
     const router = useRouter();
-    const [errors, setErrors] = useState<SentryError[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [lastFetchTime, setLastFetchTime] = useState<number>(0);
-    const CACHE_DURATION = 60 * 1000; // 60 seconds in milliseconds
+    const [currentPage, setCurrentPage] = useState(1);
+    const ITEMS_PER_PAGE = 10;
+    
+    // Use SWR for data fetching with automatic caching and revalidation
+    const { data, error: swrError, isLoading, mutate } = useSWR(
+        status === "authenticated" ? "/api/sentry/errors" : null,
+        fetcher,
+        {
+            refreshInterval: 60000, // Auto-refresh every 60 seconds
+            revalidateOnFocus: false, // Don't refetch on window focus
+            revalidateOnReconnect: true, // Refetch when reconnecting
+            dedupingInterval: 60000, // Dedupe requests within 60 seconds
+        }
+    );
+
+    const errors = data?.errors || [];
+    const error = swrError?.message || data?.message || null;
+    const loading = isLoading;
+    
+    // Pagination calculations
+    const totalPages = Math.ceil(errors.length / ITEMS_PER_PAGE);
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    const endIndex = startIndex + ITEMS_PER_PAGE;
+    const paginatedErrors = errors.slice(startIndex, endIndex);
+    
+    // Reset to page 1 when errors change
+    useEffect(() => {
+        if (currentPage > totalPages && totalPages > 0) {
+            setCurrentPage(1);
+        }
+    }, [errors.length, currentPage, totalPages]);
 
     useEffect(() => {
         if (status === "unauthenticated") {
             router.push("/login");
         }
     }, [status, router]);
-
-    useEffect(() => {
-        if (status === "authenticated") {
-            // Check if we have cached data and it's still fresh
-            const now = Date.now();
-            if (errors.length > 0 && lastFetchTime > 0 && (now - lastFetchTime) < CACHE_DURATION) {
-                setLoading(false);
-                return; // Use cached data
-            }
-            fetchErrors();
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [status]);
-
-    const fetchErrors = async (forceRefresh = false) => {
-        try {
-            setLoading(true);
-            setError(null);
-            // API route has revalidate=60, so it's cached server-side
-            // Client-side caching is handled by React state
-            const response = await fetch("/api/sentry/errors", {
-                cache: forceRefresh ? 'no-store' : 'default', // Allow bypassing cache if force refresh
-            });
-            if (!response.ok) {
-                const data = await response.json();
-                throw new Error(data.message || "Failed to fetch errors");
-            }
-            const data = await response.json();
-            setErrors(data.errors || []);
-            setLastFetchTime(Date.now()); // Update cache timestamp
-            if (data.message) {
-                setError(data.message);
-            }
-        } catch (err) {
-            setError(err instanceof Error ? err.message : "An error occurred");
-        } finally {
-            setLoading(false);
-        }
-    };
 
     if (status === "loading") {
         return (
@@ -101,10 +100,23 @@ export default function DashboardPage() {
         }
     };
 
-    const totalErrors = errors.reduce((sum, err) => sum + err.count, 0);
-    const totalUsers = errors.reduce((sum, err) => sum + err.userCount, 0);
-    const errorCount = errors.filter((err) => err.level.toLowerCase() === "error").length;
-    const warningCount = errors.filter((err) => err.level.toLowerCase() === "warning").length;
+    // Calculate real stats from actual error data
+    // Ensure count is a number to avoid string concatenation
+    const totalErrors = errors.reduce((sum, err) => {
+        const count = typeof err.count === 'number' ? err.count : parseInt(String(err.count || 0), 10);
+        return sum + (isNaN(count) ? 0 : count);
+    }, 0); // Total number of error occurrences
+    
+    const uniqueIssues = errors.length; // Number of unique error issues
+    const errorLevelIssues = errors.filter((err) => err.level.toLowerCase() === "error" || err.level.toLowerCase() === "fatal").length; // Critical errors
+    const warningLevelIssues = errors.filter((err) => err.level.toLowerCase() === "warning").length; // Warnings
+    
+    // Calculate unique affected users (sum of userCount from all errors, ensuring it's a number)
+    const affectedUsers = errors.reduce((sum, err) => {
+        const userCount = typeof err.userCount === 'number' ? err.userCount : parseInt(String(err.userCount || 0), 10);
+        return sum + (isNaN(userCount) ? 0 : userCount);
+    }, 0);
+    
     const frontendErrors = errors.filter((err) => err.projectType === "frontend").length;
     const backendErrors = errors.filter((err) => err.projectType === "backend").length;
 
@@ -181,7 +193,7 @@ export default function DashboardPage() {
                                     </svg>
                                 </div>
                             </div>
-                            <div className="text-3xl font-bold text-gray-900 dark:text-white">{errorCount}</div>
+                            <div className="text-3xl font-bold text-gray-900 dark:text-white">{errorLevelIssues.toLocaleString()}</div>
                         </div>
                     </div>
 
@@ -196,7 +208,7 @@ export default function DashboardPage() {
                                     </svg>
                                 </div>
                             </div>
-                            <div className="text-3xl font-bold text-gray-900 dark:text-white">{warningCount}</div>
+                            <div className="text-3xl font-bold text-gray-900 dark:text-white">{warningLevelIssues.toLocaleString()}</div>
                         </div>
                     </div>
 
@@ -211,7 +223,7 @@ export default function DashboardPage() {
                                 </svg>
                             </div>
                         </div>
-                        <div className="text-3xl font-bold text-gray-900 dark:text-white">{totalUsers.toLocaleString()}</div>
+                        <div className="text-3xl font-bold text-gray-900 dark:text-white">{affectedUsers.toLocaleString()}</div>
                     </div>
                 </div>
             </div>
@@ -248,25 +260,25 @@ export default function DashboardPage() {
                             Monitor and track all your application errors
                         </p>
                     </div>
-                    <button
-                        onClick={fetchErrors}
-                        disabled={loading}
-                        className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-3 font-semibold text-white shadow-lg transition-all hover:from-indigo-700 hover:to-purple-700 hover:shadow-xl hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-                    >
-                        {loading ? (
-                            <>
-                                <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                                <span>Refreshing...</span>
-                            </>
-                        ) : (
-                            <>
-                                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                                <span>Refresh</span>
-                            </>
-                        )}
-                    </button>
+                        <button
+                            onClick={() => mutate()}
+                            disabled={loading}
+                            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-3 font-semibold text-white shadow-lg transition-all hover:from-indigo-700 hover:to-purple-700 hover:shadow-xl hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                        >
+                            {loading ? (
+                                <>
+                                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                                    <span>Refreshing...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                    <span>Refresh</span>
+                                </>
+                            )}
+                        </button>
                 </div>
 
         {/* Error Message */}
@@ -321,7 +333,7 @@ export default function DashboardPage() {
                             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                                 <thead className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20">
                                     <tr>
-                                        <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300">
+                                        <th className="w-1/4 px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300">
                                             Error
                                         </th>
                                         <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300">
@@ -345,17 +357,17 @@ export default function DashboardPage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800/50">
-                                    {errors.map((error, index) => (
+                                    {paginatedErrors.map((error, index) => (
                                         <tr
                                             key={error.id}
                                             className="transition-all hover:bg-gradient-to-r hover:from-indigo-50/50 hover:to-purple-50/50 dark:hover:from-indigo-900/10 dark:hover:to-purple-900/10"
                                             style={{ animationDelay: `${index * 50}ms` }}
                                         >
-                                            <td className="whitespace-nowrap px-6 py-4">
-                                                <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                                            <td className="px-4 py-4 max-w-xs">
+                                                <div className="text-sm font-semibold text-gray-900 dark:text-white truncate" title={error.title}>
                                                     {error.title}
                                                 </div>
-                                                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400 truncate" title={error.culprit}>
                                                     {error.culprit}
                                                 </div>
                                             </td>
@@ -410,6 +422,78 @@ export default function DashboardPage() {
                                 </tbody>
                             </table>
                         </div>
+                        
+                        {/* Pagination Controls */}
+                        {totalPages > 1 && (
+                            <div className="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 px-6 py-4">
+                                <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                                    <span>
+                                        Showing <span className="font-semibold">{startIndex + 1}</span> to{" "}
+                                        <span className="font-semibold">{Math.min(endIndex, errors.length)}</span> of{" "}
+                                        <span className="font-semibold">{errors.length}</span> errors
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                        disabled={currentPage === 1}
+                                        className="flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                                    >
+                                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                                        </svg>
+                                        Previous
+                                    </button>
+                                    
+                                    {/* Page Numbers */}
+                                    <div className="flex items-center gap-1">
+                                        {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => {
+                                            // Show first page, last page, current page, and pages around current
+                                            if (
+                                                pageNum === 1 ||
+                                                pageNum === totalPages ||
+                                                (pageNum >= currentPage - 1 && pageNum <= currentPage + 1)
+                                            ) {
+                                                return (
+                                                    <button
+                                                        key={pageNum}
+                                                        onClick={() => setCurrentPage(pageNum)}
+                                                        className={`min-w-[2.5rem] rounded-lg border px-3 py-2 text-sm font-medium transition-all ${
+                                                            currentPage === pageNum
+                                                                ? "border-indigo-500 bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg"
+                                                                : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                                                        }`}
+                                                    >
+                                                        {pageNum}
+                                                    </button>
+                                                );
+                                            } else if (
+                                                pageNum === currentPage - 2 ||
+                                                pageNum === currentPage + 2
+                                            ) {
+                                                return (
+                                                    <span key={pageNum} className="px-2 text-gray-500 dark:text-gray-400">
+                                                        ...
+                                                    </span>
+                                                );
+                                            }
+                                            return null;
+                                        })}
+                                    </div>
+                                    
+                                    <button
+                                        onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                        disabled={currentPage === totalPages}
+                                        className="flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                                    >
+                                        Next
+                                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
             </main>

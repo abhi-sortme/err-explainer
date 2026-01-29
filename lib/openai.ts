@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { getCachedExplanation, saveCachedExplanation } from "./cache";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -27,6 +28,7 @@ export interface ErrorExplanation {
   possibleCauses: Array<{
     cause: string;
     likelihood: "low" | "medium" | "high";
+    codeReference: string;
     explanation: string;
   }>;
   suggestedFixes: Array<{
@@ -54,9 +56,32 @@ export async function explainError(errorDetails: {
   events?: any[];
 }): Promise<ErrorExplanation> {
   try {
-    // Extract stack trace or error message from metadata if available
+    // Normalize data for cache key generation
+    const normalizedMetadata = {
+      type: errorDetails.metadata?.type || '',
+      value: String(errorDetails.metadata?.value || '').substring(0, 200), // Limit length for consistency
+    };
+    
+    // Check cache first
+    const cached = getCachedExplanation({
+      title: String(errorDetails.title || '').trim(),
+      culprit: String(errorDetails.culprit || '').trim(),
+      metadata: normalizedMetadata,
+    });
+    
+    if (cached) {
+      console.log('✅ Using cached AI explanation - no OpenAI API call needed!');
+      return cached;
+    }
+    
+    console.log('🔄 Cache miss - generating new AI explanation...');
+    
+    // Extract comprehensive error information from Sentry data
     let errorMessage = "";
     let stackTrace = "";
+    let codeContext = "";
+    let exceptionDetails = "";
+    let breadcrumbs = "";
     
     if (errorDetails.metadata) {
       if (errorDetails.metadata.value) {
@@ -71,27 +96,108 @@ export async function explainError(errorDetails: {
       if (errorDetails.metadata.type) {
         errorMessage += ` (Type: ${errorDetails.metadata.type})`;
       }
-      // Try to get stack trace from various metadata fields
+      
+      // Extract stack trace with line numbers
       if (errorDetails.metadata.stacktrace) {
-        stackTrace = JSON.stringify(errorDetails.metadata.stacktrace);
+        const stack = errorDetails.metadata.stacktrace;
+        if (Array.isArray(stack.frames)) {
+          stackTrace += "Stack Trace (most relevant frames):\n";
+          stack.frames.slice(-5).reverse().forEach((frame: any, idx: number) => {
+            stackTrace += `  ${idx + 1}. ${frame.filename || 'unknown'}:${frame.lineno || '?'} in ${frame.function || 'anonymous'}\n`;
+            if (frame.context_line) {
+              stackTrace += `     Line ${frame.lineno}: ${frame.context_line}\n`;
+            }
+          });
+        } else {
+          stackTrace = JSON.stringify(errorDetails.metadata.stacktrace).substring(0, 1000);
+        }
       } else if (errorDetails.metadata.stack) {
-        stackTrace = String(errorDetails.metadata.stack);
+        stackTrace = String(errorDetails.metadata.stack).substring(0, 1000);
       }
     }
 
-    // Get latest event details if available
+    // Extract detailed event information
     let latestEventInfo = "";
     if (errorDetails.events && errorDetails.events.length > 0) {
       const latestEvent = errorDetails.events[0];
+      latestEventInfo += "=== LATEST EVENT DETAILS ===\n";
+      
       if (latestEvent.message) {
-        latestEventInfo += `Latest Event Message: ${latestEvent.message}\n`;
+        latestEventInfo += `Message: ${latestEvent.message}\n`;
       }
       if (latestEvent.platform) {
         latestEventInfo += `Platform: ${latestEvent.platform}\n`;
       }
+      if (latestEvent.timestamp) {
+        latestEventInfo += `Timestamp: ${latestEvent.timestamp}\n`;
+      }
+      if (latestEvent.user) {
+        latestEventInfo += `User: ${JSON.stringify(latestEvent.user)}\n`;
+      }
+      
+      // Extract exception details
+      if (latestEvent.entries) {
+        latestEvent.entries.forEach((entry: any) => {
+          if (entry.type === 'exception' && entry.data?.values) {
+            exceptionDetails += "=== EXCEPTION DETAILS ===\n";
+            entry.data.values.forEach((exc: any) => {
+              exceptionDetails += `Type: ${exc.type}\n`;
+              exceptionDetails += `Value: ${exc.value}\n`;
+              if (exc.stacktrace?.frames) {
+                exceptionDetails += "Code Context:\n";
+                exc.stacktrace.frames.slice(-3).reverse().forEach((frame: any) => {
+                  exceptionDetails += `  File: ${frame.filename}:${frame.lineno} in ${frame.function}\n`;
+                  if (frame.pre_context && frame.context_line && frame.post_context) {
+                    exceptionDetails += `  Code:\n`;
+                    frame.pre_context?.slice(-2).forEach((line: string, i: number) => {
+                      exceptionDetails += `    ${frame.lineno - 2 + i}| ${line}\n`;
+                    });
+                    exceptionDetails += `  → ${frame.lineno}| ${frame.context_line} ← ERROR HERE\n`;
+                    frame.post_context?.slice(0, 2).forEach((line: string, i: number) => {
+                      exceptionDetails += `    ${frame.lineno + 1 + i}| ${line}\n`;
+                    });
+                  }
+                });
+              }
+            });
+          }
+          
+          // Extract breadcrumbs
+          if (entry.type === 'breadcrumbs' && entry.data?.values) {
+            breadcrumbs += "=== USER ACTIONS BEFORE ERROR ===\n";
+            entry.data.values.slice(-5).forEach((crumb: any) => {
+              breadcrumbs += `  [${crumb.timestamp}] ${crumb.category}: ${crumb.message || JSON.stringify(crumb.data)}\n`;
+            });
+          }
+        });
+      }
+      
+      // Extract request context
+      if (latestEvent.request) {
+        latestEventInfo += `\nRequest Context:\n`;
+        latestEventInfo += `  URL: ${latestEvent.request.url}\n`;
+        latestEventInfo += `  Method: ${latestEvent.request.method}\n`;
+        if (latestEvent.request.query_string) {
+          latestEventInfo += `  Query: ${latestEvent.request.query_string}\n`;
+        }
+      }
+      
+      // Extract context/environment data
+      if (latestEvent.contexts) {
+        latestEventInfo += `\nEnvironment:\n`;
+        if (latestEvent.contexts.runtime) {
+          latestEventInfo += `  Runtime: ${latestEvent.contexts.runtime.name} ${latestEvent.contexts.runtime.version}\n`;
+        }
+        if (latestEvent.contexts.os) {
+          latestEventInfo += `  OS: ${latestEvent.contexts.os.name} ${latestEvent.contexts.os.version}\n`;
+        }
+        if (latestEvent.contexts.browser) {
+          latestEventInfo += `  Browser: ${latestEvent.contexts.browser.name} ${latestEvent.contexts.browser.version}\n`;
+        }
+      }
     }
 
-    // Build comprehensive context from error details
+    // Build comprehensive context from error details - USE ALL SENTRY DATA
     const errorContext = `
 === ERROR INFORMATION ===
 Error Title: ${errorDetails.title}
@@ -103,94 +209,130 @@ Platform: ${errorDetails.platform || "Not specified"}
 Location/File: ${errorDetails.culprit || "Unknown"}
 Logger: ${errorDetails.logger || "Not specified"}
 
-=== ERROR DETAILS ===
-${errorMessage ? `Error Message: ${errorMessage}\n` : ""}
-${stackTrace ? `Stack Trace (first 500 chars): ${stackTrace.substring(0, 500)}\n` : ""}
-${latestEventInfo ? `\n${latestEventInfo}` : ""}
+=== ERROR MESSAGE ===
+${errorMessage || errorDetails.title}
 
-=== METADATA ===
-${JSON.stringify(errorDetails.metadata, null, 2)}
+${stackTrace ? `\n=== STACK TRACE WITH LINE NUMBERS ===\n${stackTrace}\n` : ""}
 
-=== ADDITIONAL INFO ===
+${exceptionDetails ? `\n${exceptionDetails}\n` : ""}
+
+${breadcrumbs ? `\n${breadcrumbs}\n` : ""}
+
+${latestEventInfo ? `\n${latestEventInfo}\n` : ""}
+
+=== COMPLETE METADATA ===
+${JSON.stringify(errorDetails.metadata, null, 2).substring(0, 2000)}
+
+=== TAGS & ENVIRONMENT ===
 ${errorDetails.tags ? `Tags: ${errorDetails.tags.map(t => `${t.key}=${t.value}`).join(", ")}\n` : ""}
+
+=== OCCURRENCE PATTERN ===
 First Seen: ${errorDetails.firstSeen || "Unknown"}
 Last Seen: ${errorDetails.lastSeen || "Unknown"}
-Occurrence Count: ${errorDetails.count || 0}
-Affected Users: ${errorDetails.userCount || 0}
+Occurrence Count: ${errorDetails.count || 0} times
+Affected Users: ${errorDetails.userCount || 0} users
+${errorDetails.count && errorDetails.count > 1 ? 'This is a recurring issue!' : 'First occurrence'}
 `;
 
-    const prompt = `You are an AI Error Explainer. Your job is to explain technical errors in EXTREMELY DETAILED, simple, non-technical language that ANYONE can understand - even someone with no programming knowledge.
+    const prompt = `You are a friendly, empathetic AI Error Detective 🔍 - like having a super smart friend who's great at explaining complex technical stuff in a fun, relatable way. Your explanations should feel PERSONAL, ENGAGING, and UNIQUE - never generic or robotic!
 
-Given the following error information, provide a COMPREHENSIVE, human-friendly explanation that breaks down EVERY aspect of the error:
+Given the following error information, provide an EXCEPTIONAL, conversational explanation that makes the person feel understood and confident they can fix this:
 
 ${errorContext}
 
+YOUR UNIQUE STYLE:
+✨ Be conversational and warm - write like you're explaining to a friend over coffee
+🎯 Use creative analogies and real-world comparisons (e.g., "Think of your database like a library...")
+💡 Show empathy - acknowledge frustration ("I know errors can be frustrating, but here's the good news...")
+🔥 Make it memorable - use vivid language and specific examples
+🚀 Be optimistic and encouraging - focus on solutions, not just problems
+⚡ Avoid boring corporate/technical speak - be human and relatable!
+
 CRITICAL REQUIREMENTS:
-1. Explain EVERY part of the error in plain English
-2. Identify EXACTLY which component/file/function is causing the problem
-3. Explain WHY each part is problematic
-4. Provide CONCRETE, ACTIONABLE solutions with step-by-step instructions
-5. Use analogies and simple language - avoid ALL technical jargon
-6. Make it so clear that a non-developer can understand and potentially fix it
+1. Start with empathy - acknowledge the frustration
+2. Use unique, creative language - NO generic phrases like "there was an issue" or "something went wrong"
+3. Paint a picture with analogies - make technical concepts visual and relatable
+4. Be specific about EXACTLY what broke and where
+5. Explain in a way that makes the person feel "Ah-ha! Now I get it!"
+6. Give actionable steps that build confidence
 
 Please provide your response in the following JSON format:
 {
   "overview": "The exact error title/message as it appears (e.g., 'Illuminate\\Database\\QueryException: SQLSTATE[23000]: Integrity constraint violation...')",
-  "aiErrorExplanation": "A friendly, human explanation starting with 'It looks like you got...' or similar conversational tone. Explain what the error means in simple terms, what table/field/component is involved, and why it happened. Keep it conversational and easy to understand (3-4 sentences)",
+  "aiErrorExplanation": "A UNIQUE, warm, conversational explanation that:
+    - Starts with empathy or acknowledgment (e.g., 'Ah, this is a classic case of...' or 'Here's what's happening behind the scenes...')
+    - Uses a creative analogy or metaphor to explain the error
+    - Specifically names the table/field/component involved
+    - Explains WHY it happened in relatable terms
+    - Ends with an encouraging note
+    Keep it 4-5 sentences and make it MEMORABLE and SPECIFIC to this exact error - avoid generic language!",
   "detailedBreakdown": {
-    "whatHappened": "Detailed explanation of what exactly happened (3-4 sentences)",
-    "whereItHappened": "Clear explanation of the exact location/file/component where the error occurred (2-3 sentences)",
-    "whyItHappened": "Explanation of why this error occurred - the root cause (3-4 sentences)",
-    "whenItHappened": "Context about when this error occurs (timing, frequency, triggers) (2-3 sentences)"
+    "whatHappened": "Paint a vivid picture of what exactly happened - use an analogy if helpful. Be specific about the action that failed. (3-4 sentences with personality)",
+    "whereItHappened": "Pinpoint the EXACT location - mention specific file names, functions, or components. Make it feel like you're giving them a map with an X marking the spot. (2-3 sentences)",
+    "whyItHappened": "Dig into the root cause with a relatable explanation. Think 'detective solving a mystery' - what's the real culprit? Use an analogy if it helps. (3-4 sentences with insight)",
+    "whenItHappened": "Explain the trigger conditions in everyday language. When does this monster show up? (2-3 sentences with context)"
   },
   "severity": "low" | "medium" | "high" | "critical",
   "impact": {
-    "userImpact": "How this affects end users in plain language (2-3 sentences)",
-    "systemImpact": "How this affects the system/application (2-3 sentences)",
-    "businessImpact": "How this affects business operations (1-2 sentences)"
+    "userImpact": "Explain what users actually experience - be specific and empathetic. (e.g., 'Users will see a blank screen when trying to checkout' not 'users may experience issues') (2-3 sentences)",
+    "systemImpact": "Describe the system impact in visual, relatable terms. (e.g., 'Your database is refusing new orders like a bouncer at a full club') (2-3 sentences)",
+    "businessImpact": "Connect it to real business outcomes in plain language. Be direct and clear. (1-2 sentences)"
   },
   "errorComponents": [
     {
-      "component": "Name of the component/file/function",
-      "issue": "What's wrong with this component",
-      "explanation": "Detailed explanation in plain English (2-3 sentences)"
+      "component": "Specific component/file/function name",
+      "issue": "What's broken - be specific and visual",
+      "explanation": "Explain like you're showing someone the broken part. Use analogies. (2-3 engaging sentences)"
     }
   ],
   "possibleCauses": [
     {
-      "cause": "A possible cause in plain language",
+      "cause": "A specific, relatable cause (not generic)",
       "likelihood": "low" | "medium" | "high",
-      "explanation": "Why this might be the cause (2-3 sentences)"
+      "codeReference": "EXACT file path, line number, and function where this cause originates (e.g., 'app/Http/Controllers/TransactionController.php:45 in createTransaction()' or 'src/components/Header.tsx:120'). If multiple locations, list the most relevant one. ALWAYS include this based on stack trace!",
+      "explanation": "Tell the detective story - why this could be the culprit. Reference the SPECIFIC code location and what's happening there. Use analogies. (3-4 sentences with personality and code context)"
     }
   ],
   "suggestedFixes": [
     {
-      "fix": "A concrete solution in plain language",
+      "fix": "A specific, actionable solution (not 'check the logs' or 'verify settings' unless truly specific)",
       "priority": "low" | "medium" | "high",
-      "steps": ["Step 1: Do this...", "Step 2: Then do this...", "Step 3: Finally..."],
+      "steps": [
+        "Step 1: Open [specific file] and look for [specific thing]...",
+        "Step 2: Change [specific value] from X to Y because...",
+        "Step 3: Test by [specific action]...",
+        "Make each step feel like a mini-tutorial with confidence-building language"
+      ],
       "difficulty": "easy" | "medium" | "hard"
     }
   ],
   "preventionTips": [
-    "Tip 1 to prevent this error",
-    "Tip 2 to prevent this error",
-    "Tip 3 to prevent this error"
+    "Specific, actionable tip with personality (e.g., 'Always double-check that merchant exists before creating transactions - think of it like verifying an address before shipping a package')",
+    "Another unique tip with context",
+    "One more memorable tip that shows real understanding"
   ]
 }
 
-IMPORTANT:
-- Break down EVERY technical term into simple language
-- Provide SPECIFIC file names, function names, or components mentioned in the error
-- Give CONCRETE steps, not vague suggestions
-- Explain what each part means in non-technical terms
-- Use real-world analogies when helpful`;
+GOLDEN RULES FOR EXCEPTIONAL EXPLANATIONS:
+🎯 BE SPECIFIC - Name exact files, tables, fields, functions, LINE NUMBERS
+📍 USE CODE REFERENCES - Always point to specific file:line locations from the stack trace
+🎨 BE CREATIVE - Use unique analogies that fit THIS error
+❤️ BE EMPATHETIC - Show you understand frustration
+🔥 BE MEMORABLE - Make them say "Wow, that makes so much sense!"
+⚡ BE ACTIONABLE - Give concrete next steps with exact locations
+📊 USE ALL DATA - Reference breadcrumbs, request context, environment info
+🚫 NEVER BE GENERIC - Avoid phrases like "something went wrong", "there was an issue", "the system encountered an error"
+
+CRITICAL: In "possibleCauses", ALWAYS include the exact file path and line number from the stack trace or exception details. This is NOT optional - it's the most valuable information for debugging!
+
+Think: If you were explaining this to your non-technical friend at a coffee shop, what would you say to make them go "Ohhh, I get it now!" with a smile? But also give them a treasure map showing EXACTLY where to dig!`;
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
-          content: "You are a helpful AI assistant that explains technical errors in simple, non-technical language. Always respond with valid JSON only.",
+          content: "You are an exceptionally creative and empathetic AI Error Detective. You explain technical errors with personality, warmth, and memorable analogies - like a brilliant friend who makes complex things crystal clear. Your explanations are NEVER generic or corporate - they're engaging, specific, and make people feel understood. Always respond with valid JSON only.",
         },
         {
           role: "user",
@@ -198,7 +340,7 @@ IMPORTANT:
         },
       ],
       response_format: { type: "json_object" },
-      temperature: 0.7,
+      temperature: 0.9, // Higher temperature for more creative, unique responses
     });
 
     const responseContent = completion.choices[0]?.message?.content;
@@ -207,6 +349,17 @@ IMPORTANT:
     }
 
     const parsed = JSON.parse(responseContent) as ErrorExplanation;
+    
+    // Save to cache with normalized data (reuse normalizedMetadata from above)
+    saveCachedExplanation(
+      {
+        title: String(errorDetails.title || '').trim(),
+        culprit: String(errorDetails.culprit || '').trim(),
+        metadata: normalizedMetadata,
+      },
+      parsed
+    );
+    
     return parsed;
   } catch (error) {
     console.error("Error explaining error with OpenAI:", error);
@@ -214,67 +367,86 @@ IMPORTANT:
     // Fallback explanation if OpenAI fails
     return {
       overview: errorDetails.title,
-      aiErrorExplanation: `It looks like you got a ${errorDetails.level} error in your application. ${errorDetails.title}. This happened because something went wrong in the system.`,
+      aiErrorExplanation: `Heads up! Your ${errorDetails.platform || 'application'} just hit a snag. Think of it like a traffic jam in your code - ${errorDetails.title.substring(0, 100)}${errorDetails.title.length > 100 ? '...' : ''}. The good news? We can work through this together. This happened ${errorDetails.count && errorDetails.count > 1 ? `${errorDetails.count} times` : 'recently'}, affecting ${errorDetails.userCount || 'some'} users. Let's dig into what's causing this roadblock.`,
       detailedBreakdown: {
-        whatHappened: `An error occurred: ${errorDetails.title}`,
-        whereItHappened: errorDetails.culprit || "The error location is unknown",
-        whyItHappened: "The exact cause needs to be investigated",
-        whenItHappened: "This error has been occurring in your application",
+        whatHappened: `Here's the situation: ${errorDetails.title}. Imagine your code tried to do something but hit an unexpected obstacle - like trying to open a door that's suddenly locked. The ${errorDetails.level} level tells us this needs attention${errorDetails.count && errorDetails.count > 10 ? ', especially since it\'s happening frequently' : ''}.`,
+        whereItHappened: errorDetails.culprit ? `The trouble is brewing in ${errorDetails.culprit}. That's your starting point for investigation - think of it as the crime scene where everything went sideways.` : "The exact location is playing hide and seek with us, but we'll track it down through the error details.",
+        whyItHappened: `Root causes can vary, but typically this kind of ${errorDetails.level} error happens when there's a mismatch between what your code expects and what it actually receives. It's like ordering pizza and getting sushi - both are food, but not what you asked for! We'll need to investigate the specific circumstances.`,
+        whenItHappened: `This has been showing up ${errorDetails.firstSeen ? `since ${new Date(errorDetails.firstSeen).toLocaleDateString()}` : 'recently'}, with the most recent occurrence ${errorDetails.lastSeen ? `on ${new Date(errorDetails.lastSeen).toLocaleDateString()}` : 'just now'}. ${errorDetails.count && errorDetails.count > 5 ? 'The frequency suggests this isn\'t a one-off - there\'s a pattern here worth investigating.' : 'Keep an eye on whether this becomes a repeat visitor.'}`,
       },
       severity: errorDetails.level === "error" || errorDetails.level === "fatal" ? "high" : "medium",
       impact: {
-        userImpact: "Users may experience issues with this feature",
-        systemImpact: "This error may affect the application's functionality",
-        businessImpact: "This could impact user experience",
+        userImpact: errorDetails.userCount && errorDetails.userCount > 0 ? `${errorDetails.userCount} user${errorDetails.userCount > 1 ? 's have' : ' has'} bumped into this. They're likely seeing error messages, failed actions, or features that won't cooperate - definitely not the experience you want them to have.` : "Users encountering this will hit a wall trying to use this feature. It's the digital equivalent of a 'Sorry, we're closed' sign when they expect to walk right in.",
+        systemImpact: `Your ${errorDetails.platform || 'application'} is throwing up red flags in ${errorDetails.culprit || 'a key area'}. Think of it like a cog in a machine that's stopped turning - it might affect just this feature, or it could have ripple effects depending on how central this component is to your app.`,
+        businessImpact: errorDetails.count && errorDetails.count > 10 ? "With this many occurrences, it's affecting your user experience and potentially your reputation. Time to roll up those sleeves!" : "While one error won't sink the ship, addressing it quickly shows users you care about quality.",
       },
       errorComponents: [
         {
-          component: errorDetails.culprit || "Unknown component",
-          issue: "An error occurred in this component",
-          explanation: "This component encountered an issue that needs to be addressed",
+          component: errorDetails.culprit || "Mystery Component (detective work needed!)",
+          issue: `This is where the music stopped playing`,
+          explanation: errorDetails.culprit ? `Think of ${errorDetails.culprit} as the stage where this drama unfolded. Something in this part of your code tried to do its job but couldn't complete it. It's like a chef who ran out of a key ingredient halfway through cooking.` : "We're still tracking down the exact location, but the error details above should give us breadcrumbs to follow.",
         },
       ],
       possibleCauses: [
         {
-          cause: "Unexpected input or data",
-          likelihood: "medium",
-          explanation: "The application may have received data it wasn't expecting",
+          cause: "Data mismatch - the classic 'expecting an apple, got an orange' scenario",
+          likelihood: "high",
+          codeReference: errorDetails.culprit || "See error location above",
+          explanation: `Your code was expecting data in a certain format or with certain values, but what showed up was different. Like planning for 10 guests and 100 people show up - technically both are 'people' but the scale is all wrong. Check ${errorDetails.culprit || 'the error location'} for data validation.`,
         },
         {
-          cause: "Configuration issue",
+          cause: "Configuration hiccup - settings playing hide and seek",
           likelihood: "medium",
-          explanation: "There may be a problem with how the application is configured",
+          codeReference: errorDetails.culprit || "Configuration files",
+          explanation: `Something in your environment variables, config files, or settings isn't quite right. Imagine trying to call someone but having the wrong phone number - the system is there, but you can't connect.`,
         },
         {
-          cause: "External service problem",
-          likelihood: "low",
-          explanation: "An external service the application depends on may be having issues",
+          cause: "External dependency having a bad day",
+          likelihood: "medium",
+          codeReference: errorDetails.culprit || "External service call",
+          explanation: `If your ${errorDetails.platform || 'app'} relies on databases, APIs, or other services, one of them might be slow, down, or returning unexpected responses. It's like showing up to a meeting and the other person is a no-show.`,
         },
       ],
       suggestedFixes: [
         {
-          fix: "Check the error logs for more details",
+          fix: `Deep dive into ${errorDetails.culprit || 'the error location'} - play detective!`,
           priority: "high",
-          steps: ["Open the error logs", "Look for this error", "Note the time and context"],
-          difficulty: "easy",
-        },
-        {
-          fix: "Verify configuration settings",
-          priority: "medium",
-          steps: ["Check configuration files", "Verify all settings are correct", "Restart the application"],
+          steps: [
+            `Open your error tracking (Sentry, logs, etc.) and look for this specific error: "${errorDetails.title.substring(0, 60)}${errorDetails.title.length > 60 ? '...' : ''}"`,
+            "Check what data or input was being processed when this happened - look for patterns in user actions or data that trigger it",
+            `Review the code in ${errorDetails.culprit || 'the error location'} - what assumptions is it making about the data it receives?`,
+            "Add defensive checks or validation to handle unexpected cases gracefully"
+          ],
           difficulty: "medium",
         },
         {
-          fix: "Contact support if the issue persists",
-          priority: "low",
-          steps: ["Document the error", "Collect error logs", "Contact technical support"],
+          fix: "Run a full health check on your configuration and dependencies",
+          priority: "high",
+          steps: [
+            "Double-check all environment variables are set correctly (database URLs, API keys, etc.)",
+            "Verify external services (databases, APIs) are responding and healthy",
+            "Test with fresh data to rule out corrupted records or edge cases",
+            "Review recent deployments - did anything change right before this started?"
+          ],
+          difficulty: "medium",
+        },
+        {
+          fix: "Set up better monitoring so you catch this faster next time",
+          priority: "medium",
+          steps: [
+            `Add more detailed logging around ${errorDetails.culprit || 'critical operations'} to capture context when errors occur`,
+            "Set up alerts for this specific error type so you know immediately when it happens",
+            "Create a dashboard to track error frequency and patterns",
+            "Consider adding user-friendly error messages that guide users on what to do when this happens"
+          ],
           difficulty: "easy",
         },
       ],
       preventionTips: [
-        "Monitor error logs regularly",
-        "Test changes before deploying",
-        "Keep dependencies updated",
+        `Always validate data before processing it - think 'trust but verify'. Add checks for data types, required fields, and value ranges before your code tries to use them.`,
+        `Build in graceful fallbacks: If something fails, have a Plan B so users see a helpful message instead of a crash. Like having a backup battery for your flashlight.`,
+        `Test with real-world messy data, not just perfect test cases. Users will find creative ways to break things - anticipate the unexpected!`,
+        `Keep your dependencies and libraries updated, but test changes in a safe environment first. Outdated packages can have known bugs that are already fixed in newer versions.`
       ],
     };
   }

@@ -155,8 +155,19 @@ export default function ErrorDetailsPage() {
       setAiLoading(true);
       setAiError(null);
       
-      // API route has revalidate=300, so it's cached server-side
-      // Client-side caching is handled by React state
+      // Check if we already have a cached explanation (client-side check)
+      // The server-side cache in lib/openai.ts will also check, but this prevents unnecessary API calls
+      if (!forceRefresh && aiExplanation && lastAIFetchTime > 0) {
+        const now = Date.now();
+        if ((now - lastAIFetchTime) < AI_CACHE_DURATION) {
+          console.log('✅ Using client-side cached AI explanation');
+          setAiLoading(false);
+          return; // Use existing cached explanation
+        }
+      }
+      
+      // API route will check server-side cache (lib/openai.ts)
+      // If cached, it returns immediately without calling OpenAI
       const response = await fetch("/api/ai/explain", {
         method: "POST",
         headers: {
@@ -494,7 +505,7 @@ export default function ErrorDetailsPage() {
                   <h3 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Possible Causes</h3>
                   <div className="space-y-4">
                     {aiExplanation.possibleCauses.map((cause, index) => (
-                      <div key={index} className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/50">
+                      <div key={index} className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/50 border-l-4 border-l-indigo-500">
                         <div className="mb-2 flex items-center gap-2">
                           <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
                             {index + 1}
@@ -508,6 +519,19 @@ export default function ErrorDetailsPage() {
                             {cause.likelihood.toUpperCase()} LIKELIHOOD
                           </span>
                         </div>
+                        {cause.codeReference && (
+                          <div className="mb-2 ml-8 flex items-start gap-2 rounded bg-indigo-50 dark:bg-indigo-900/20 px-3 py-2">
+                            <svg className="mt-0.5 h-4 w-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                            </svg>
+                            <div className="flex-1">
+                              <div className="text-xs font-semibold text-indigo-900 dark:text-indigo-200 mb-1">📍 Code Location:</div>
+                              <code className="text-xs font-mono text-indigo-900 dark:text-indigo-200 break-all">
+                                {cause.codeReference}
+                              </code>
+                            </div>
+                          </div>
+                        )}
                         <p className="ml-8 text-sm leading-relaxed text-gray-700 dark:text-gray-300">
                           {cause.explanation}
                         </p>
