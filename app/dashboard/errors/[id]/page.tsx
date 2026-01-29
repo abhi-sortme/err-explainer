@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 
+export const dynamic = 'force-dynamic'; // Force dynamic rendering since this page calls auth-protected APIs
+
 interface ErrorDetails {
     id: string;
     title: string;

@@ -9,6 +9,8 @@ import { useLinearIssues } from "@/lib/hooks/useLinearIssues";
 import { matchLinearIssue, type SentryError, type LinearIssue } from "@/lib/utils/linear-matcher";
 import { calculateErrorStats, getLevelColor } from "@/lib/utils/error-stats";
 
+export const dynamic = 'force-dynamic'; // Force dynamic rendering since this page calls auth-protected APIs
+
 export default function DashboardPage() {
     const { data: session, status } = useSession();
     const router = useRouter();
