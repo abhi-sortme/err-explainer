@@ -27,8 +27,12 @@ export function calculateErrorStats(errors: SentryError[]): ErrorStats {
   });
   const affectedUsers = errors.reduce((sum, err) => sum + Number(err.userCount || 0), 0);
 
-  const frontendErrors = errors.filter((err) => err.projectType === "Frontend").length;
-  const backendErrors = errors.filter((err) => err.projectType === "Backend").length;
+  const frontendErrors = errors.filter((err) => 
+    err.projectType?.toLowerCase() === "frontend" || err.projectType === "Frontend"
+  ).length;
+  const backendErrors = errors.filter((err) => 
+    err.projectType?.toLowerCase() === "backend" || err.projectType === "Backend"
+  ).length;
 
   return {
     totalErrors,

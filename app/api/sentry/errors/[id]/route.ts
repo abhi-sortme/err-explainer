@@ -104,54 +104,83 @@ export async function GET(
     });
 
     if (!response.ok) {
-      // If direct endpoint fails, try project-specific endpoint
+      // If direct endpoint fails, try project-specific endpoints
       if (response.status === 404) {
-        console.log("Direct endpoint failed, trying project-specific endpoint");
-        url = `https://sentry.io/api/0/projects/${sentryOrg}/${projectSlug}/issues/${errorId}/`;
+        console.log("Direct endpoint failed, trying project-specific endpoints");
         
-          const projectResponse = await fetch(url, {
+        // Try frontend project first
+        if (sentryFrontendProject) {
+          const frontendUrl = `https://sentry.io/api/0/projects/${sentryOrg}/${sentryFrontendProject}/issues/${errorId}/`;
+          const frontendResponse = await fetch(frontendUrl, {
             headers: {
               Authorization: `Bearer ${sentryAuthToken}`,
               "Content-Type": "application/json",
             },
-            next: { revalidate: 120 }, // Cache for 2 minutes
+            next: { revalidate: 120 },
           });
 
-        if (!projectResponse.ok) {
-          let errorDetails = "";
-          try {
-            const errorData = await projectResponse.json();
-            errorDetails = errorData.detail || errorData.message || JSON.stringify(errorData);
-          } catch {
-            const errorText = await projectResponse.text();
-            errorDetails = errorText || "No error details available";
+          if (frontendResponse.ok) {
+            const issueData = await frontendResponse.json();
+            return await processIssueData(issueData, errorId, sentryFrontendProject, sentryAuthToken, sentryFrontendProject, sentryBackendProject);
           }
-
-          console.error("Sentry API error:", {
-            status: projectResponse.status,
-            statusText: projectResponse.statusText,
-            url,
-            errorId,
-            errorDetails,
-          });
-
-          return NextResponse.json({
-            error: `Failed to fetch error details: ${projectResponse.status} ${projectResponse.statusText}`,
-            details: errorDetails,
-            debug: {
-              errorId,
-              org: sentryOrg,
-              project: projectSlug,
-              url,
-            },
-          }, { status: projectResponse.status });
         }
 
-        // Use project response if successful
-        const issueData = await projectResponse.json();
-        // Extract project slug from URL
-        const extractedProjectSlug = url.split('/projects/')[1]?.split('/')[0] || projectSlug || "default";
-        return await processIssueData(issueData, errorId, extractedProjectSlug, sentryAuthToken, sentryFrontendProject, sentryBackendProject);
+        // Try backend project
+        if (sentryBackendProject) {
+          const backendUrl = `https://sentry.io/api/0/projects/${sentryOrg}/${sentryBackendProject}/issues/${errorId}/`;
+          const backendResponse = await fetch(backendUrl, {
+            headers: {
+              Authorization: `Bearer ${sentryAuthToken}`,
+              "Content-Type": "application/json",
+            },
+            next: { revalidate: 120 },
+          });
+
+          if (backendResponse.ok) {
+            const issueData = await backendResponse.json();
+            return await processIssueData(issueData, errorId, sentryBackendProject, sentryAuthToken, sentryFrontendProject, sentryBackendProject);
+          }
+        }
+
+        // Try fallback project if configured
+        if (sentryProject) {
+          const fallbackUrl = `https://sentry.io/api/0/projects/${sentryOrg}/${sentryProject}/issues/${errorId}/`;
+          const fallbackResponse = await fetch(fallbackUrl, {
+            headers: {
+              Authorization: `Bearer ${sentryAuthToken}`,
+              "Content-Type": "application/json",
+            },
+            next: { revalidate: 120 },
+          });
+
+          if (fallbackResponse.ok) {
+            const issueData = await fallbackResponse.json();
+            return await processIssueData(issueData, errorId, sentryProject, sentryAuthToken, sentryFrontendProject, sentryBackendProject);
+          }
+        }
+
+        // All endpoints failed
+        let errorDetails = "";
+        try {
+          const errorData = await response.json();
+          errorDetails = errorData.detail || errorData.message || JSON.stringify(errorData);
+        } catch {
+          const errorText = await response.text();
+          errorDetails = errorText || "No error details available";
+        }
+
+        return NextResponse.json({
+          error: `Failed to fetch error details: ${response.status} ${response.statusText}`,
+          details: errorDetails,
+          debug: {
+            errorId,
+            org: sentryOrg,
+            frontendProject: sentryFrontendProject,
+            backendProject: sentryBackendProject,
+            fallbackProject: sentryProject,
+            url,
+          },
+        }, { status: response.status });
       } else {
         let errorDetails = "";
         try {
@@ -176,7 +205,6 @@ export async function GET(
           debug: {
             errorId,
             org: sentryOrg,
-            project: projectSlug,
             url,
           },
         }, { status: response.status });
@@ -184,8 +212,8 @@ export async function GET(
     }
 
     const issueData = await response.json();
-    // Try to get project from issue data, or use a default
-    const issueProjectSlug = issueData.project?.slug || projectSlug || "default";
+    // Try to get project from issue data
+    const issueProjectSlug = issueData.project?.slug || sentryFrontendProject || sentryBackendProject || sentryProject || "default";
     return await processIssueData(issueData, errorId, issueProjectSlug, sentryAuthToken, sentryFrontendProject, sentryBackendProject);
   } catch (error) {
     console.error("Error fetching Sentry error details:", error);
@@ -232,8 +260,24 @@ async function processIssueData(issueData: any, errorId: string, projectSlug: st
   let linearIssue = undefined;
   const linearApiKey = process.env.LINEAR_API_KEY;
   if (linearApiKey) {
-    const linearIssues = await fetchLinearIssues(linearApiKey);
-    linearIssue = matchLinearIssue(issueData.title, errorId, linearIssues);
+    try {
+      const linearIssues = await fetchLinearIssues(linearApiKey);
+      const sentryError: SentryError = {
+        id: String(issueData.id || errorId),
+        title: issueData.title || "",
+        level: issueData.level || "error",
+        lastSeen: issueData.lastSeen || new Date().toISOString(),
+        count: issueData.count || 0,
+        userCount: issueData.userCount || 0,
+        projectType: projectType === "frontend" ? "Frontend" : "Backend",
+        culprit: issueData.culprit,
+        metadata: issueData.metadata,
+      };
+      linearIssue = matchLinearIssue(sentryError, linearIssues);
+    } catch (err) {
+      console.error("Failed to match Linear issue:", err);
+      // Continue without Linear issue if matching fails
+    }
   }
 
   // Transform the data

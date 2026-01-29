@@ -13,6 +13,8 @@ export default function DashboardPage() {
     const { data: session, status } = useSession();
     const router = useRouter();
     const [currentPage, setCurrentPage] = useState(1);
+    const [projectFilter, setProjectFilter] = useState<"all" | "frontend" | "backend">("all");
+    const [linearFilter, setLinearFilter] = useState<"all" | "yes" | "no">("all");
     const ITEMS_PER_PAGE = 10;
 
     // Fetch Sentry errors and Linear issues using custom hooks
@@ -38,7 +40,34 @@ export default function DashboardPage() {
         linearIssue: matchLinearIssue(error, linearIssues),
     }));
 
-    const errors = errorsWithLinear;
+    // Apply filters
+    const filteredErrors = errorsWithLinear.filter((error) => {
+        // Project type filter
+        if (projectFilter !== "all") {
+            const errorProjectType = error.projectType?.toLowerCase() || "";
+            if (projectFilter === "frontend" && errorProjectType !== "frontend") {
+                return false;
+            }
+            if (projectFilter === "backend" && errorProjectType !== "backend") {
+                return false;
+            }
+        }
+
+        // Linear status filter
+        if (linearFilter !== "all") {
+            const hasLinearIssue = !!error.linearIssue;
+            if (linearFilter === "yes" && !hasLinearIssue) {
+                return false;
+            }
+            if (linearFilter === "no" && hasLinearIssue) {
+                return false;
+            }
+        }
+
+        return true;
+    });
+
+    const errors = filteredErrors;
 
     // Debug: Log Sentry errors
     useEffect(() => {
@@ -52,8 +81,8 @@ export default function DashboardPage() {
     const error = swrError?.message || data?.message || null;
     const loading = isLoading;
 
-    // Calculate statistics
-    const stats = calculateErrorStats(errors);
+    // Calculate statistics from ALL errors (not filtered)
+    const stats = calculateErrorStats(errorsWithLinear);
 
     // Pagination calculations
     const totalPages = Math.ceil(errors.length / ITEMS_PER_PAGE);
@@ -61,7 +90,11 @@ export default function DashboardPage() {
     const endIndex = startIndex + ITEMS_PER_PAGE;
     const paginatedErrors = errors.slice(startIndex, endIndex);
 
-    // Reset to page 1 when errors change
+    // Reset to page 1 when errors or filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [projectFilter, linearFilter]);
+
     useEffect(() => {
         if (currentPage > totalPages && totalPages > 0) {
             setCurrentPage(1);
@@ -95,9 +128,9 @@ export default function DashboardPage() {
     }
 
     return (
-        <div className="relative min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 overflow-hidden">
+        <div className="relative min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
             {/* Animated background orbs */}
-            <div className="fixed inset-0 pointer-events-none">
+            <div className="fixed inset-0 pointer-events-none overflow-hidden">
                 <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-600/20 rounded-full blur-3xl animate-pulse"></div>
                 <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-pink-600/20 rounded-full blur-3xl animate-pulse delay-700"></div>
                 <div className="absolute top-1/2 left-1/2 w-96 h-96 bg-cyan-600/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
@@ -111,9 +144,9 @@ export default function DashboardPage() {
                 }}></div>
             </div>
 
-            <div className="relative p-8">
-                {/* Header */}
-                <div className="mb-8 flex justify-between items-center">
+            {/* Sticky Header */}
+            <div className="sticky top-0 z-50 mb-8 bg-slate-900/30 backdrop-blur-sm">
+                <div className="p-8 flex justify-between items-center">
                     <div>
                         <div className="flex items-center gap-4 mb-2">
                             <div className="p-3 bg-gradient-to-br from-purple-600 to-pink-600 rounded-xl shadow-lg shadow-purple-500/50">
@@ -123,16 +156,9 @@ export default function DashboardPage() {
                             </div>
                             <div>
                                 <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent">
-                                    AI Error Explainer
+                                    Smart Error Explainer
                                 </h1>
                                 <p className="text-gray-400 mt-1 flex items-center gap-2">
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-purple-600/20 text-purple-300 border border-purple-500/30">
-                                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                            <path d="M13 7H7v6h6V7z" />
-                                            <path fillRule="evenodd" d="M7 2a1 1 0 012 0v1h2V2a1 1 0 112 0v1h2a2 2 0 012 2v2h1a1 1 0 110 2h-1v2h1a1 1 0 110 2h-1v2a2 2 0 01-2 2h-2v1a1 1 0 11-2 0v-1H9v1a1 1 0 11-2 0v-1H5a2 2 0 01-2-2v-2H2a1 1 0 110-2h1V9H2a1 1 0 010-2h1V5a2 2 0 012-2h2V2zM5 5h10v10H5V5z" clipRule="evenodd" />
-                                        </svg>
-                                        Powered by GPT-4
-                                    </span>
                                     Welcome back, {session.user?.name}
                                 </p>
                             </div>
@@ -141,7 +167,7 @@ export default function DashboardPage() {
                     <div className="flex items-center gap-3">
                         <button
                             onClick={handleRefresh}
-                            className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all duration-200 flex items-center gap-2 shadow-lg shadow-purple-500/30"
+                            className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all duration-200 flex items-center gap-2 shadow-lg shadow-purple-500/30 cursor-pointer"
                         >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -150,12 +176,15 @@ export default function DashboardPage() {
                         </button>
                         <button
                             onClick={() => signOut({ callbackUrl: "/login" })}
-                            className="px-4 py-2 bg-slate-800/80 backdrop-blur-sm border border-slate-700 text-gray-300 rounded-lg hover:bg-slate-700 transition-all duration-200"
+                            className="px-4 py-2 bg-slate-800/80 backdrop-blur-sm border border-slate-700 text-gray-300 rounded-lg hover:bg-slate-700 transition-all duration-200 cursor-pointer"
                         >
                             Sign Out
                         </button>
                     </div>
                 </div>
+            </div>
+
+            <div className="relative p-8">
 
                 {/* Stats Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -254,12 +283,44 @@ export default function DashboardPage() {
                 {/* Errors Table */}
                 <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-slate-700/50 overflow-hidden">
                     <div className="p-6 border-b border-slate-700/50">
-                        <h2 className="text-2xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent">
-                            Sentry Errors
-                        </h2>
-                        <p className="text-gray-400 text-sm mt-1">
-                            {errors.length} total issues • Page {currentPage} of {totalPages || 1}
-                        </p>
+                        <div className="flex items-center justify-between mb-4">
+                            <div>
+                                <h2 className="text-2xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent">
+                                    Sentry Errors
+                                </h2>
+                                <p className="text-gray-400 text-sm mt-1">
+                                    {errors.length} filtered issues • Page {currentPage} of {totalPages || 1}
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                {/* Project Type Filter */}
+                                <div className="flex items-center gap-2">
+                                    <label className="text-sm font-medium text-gray-400">Project:</label>
+                                    <select
+                                        value={projectFilter}
+                                        onChange={(e) => setProjectFilter(e.target.value as "all" | "frontend" | "backend")}
+                                        className="px-3 py-1.5 bg-slate-800/80 backdrop-blur-sm border border-slate-700 text-gray-300 rounded-lg hover:bg-slate-700 transition-all duration-200 cursor-pointer text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                    >
+                                        <option value="all">All</option>
+                                        <option value="frontend">Frontend</option>
+                                        <option value="backend">Backend</option>
+                                    </select>
+                                </div>
+                                {/* Linear Status Filter */}
+                                <div className="flex items-center gap-2">
+                                    <label className="text-sm font-medium text-gray-400">Linear:</label>
+                                    <select
+                                        value={linearFilter}
+                                        onChange={(e) => setLinearFilter(e.target.value as "all" | "yes" | "no")}
+                                        className="px-3 py-1.5 bg-slate-800/80 backdrop-blur-sm border border-slate-700 text-gray-300 rounded-lg hover:bg-slate-700 transition-all duration-200 cursor-pointer text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                    >
+                                        <option value="all">All</option>
+                                        <option value="yes">Yes</option>
+                                        <option value="no">No</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     {loading ? (
@@ -277,13 +338,17 @@ export default function DashboardPage() {
                         </div>
                     ) : errors.length === 0 ? (
                         <div className="p-12 text-center">
-                            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-green-600/20 to-cyan-600/20 mb-4">
-                                <svg className="w-8 h-8 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-yellow-600/20 to-orange-600/20 mb-4">
+                                <svg className="w-8 h-8 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                                 </svg>
                             </div>
                             <h3 className="text-lg font-semibold text-gray-300 mb-2">No errors found</h3>
-                            <p className="text-gray-500">Your application is running smoothly!</p>
+                            <p className="text-gray-500">
+                                {(projectFilter !== "all" || linearFilter !== "all")
+                                    ? "No errors match the current filters. Try adjusting your filters."
+                                    : "Your application is running smoothly!"}
+                            </p>
                         </div>
                     ) : (
                         <>
@@ -318,11 +383,11 @@ export default function DashboardPage() {
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4">
-                                                    <span className={`px-3 py-1 text-xs font-semibold rounded-lg ${err.projectType === "Frontend"
-                                                            ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
-                                                            : "bg-orange-500/20 text-orange-400 border border-orange-500/30"
+                                                    <span className={`px-3 py-1 text-xs font-semibold rounded-lg ${err.projectType?.toLowerCase() === "frontend"
+                                                        ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
+                                                        : "bg-orange-500/20 text-orange-400 border border-orange-500/30"
                                                         }`}>
-                                                        {err.projectType}
+                                                        {err.projectType ? (err.projectType.charAt(0).toUpperCase() + err.projectType.slice(1).toLowerCase()) : "Unknown"}
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4 text-sm text-gray-300">{Number(err.count).toLocaleString()}</td>
@@ -398,8 +463,8 @@ export default function DashboardPage() {
                                                             <button
                                                                 onClick={() => setCurrentPage(page)}
                                                                 className={`min-w-10 px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${currentPage === page
-                                                                        ? "bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/50"
-                                                                        : "bg-slate-800/80 text-gray-400 hover:bg-slate-700"
+                                                                    ? "bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/50"
+                                                                    : "bg-slate-800/80 text-gray-400 hover:bg-slate-700"
                                                                     }`}
                                                             >
                                                                 {page}
