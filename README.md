@@ -6,6 +6,7 @@ A Next.js dashboard application for viewing Sentry errors with Google OAuth auth
 
 - 🔐 Google OAuth authentication using NextAuth.js
 - 📊 Dashboard displaying Sentry errors
+- 🤖 **AI-powered error explanations** - Understand errors in plain English
 - 🎨 Modern UI with Tailwind CSS
 - 🔒 Protected routes with middleware
 
@@ -16,6 +17,7 @@ A Next.js dashboard application for viewing Sentry errors with Google OAuth auth
 - Node.js 18+ installed
 - A Google Cloud project with OAuth credentials
 - A Sentry account with API access
+- An OpenAI API key (for AI error explanations)
 
 ### Installation
 
@@ -45,7 +47,15 @@ GOOGLE_CLIENT_SECRET=your-google-client-secret
 # Get your auth token from https://sentry.io/settings/account/api/auth-tokens/
 SENTRY_AUTH_TOKEN=your-sentry-auth-token
 SENTRY_ORG=your-sentry-organization-slug
-SENTRY_PROJECT=your-sentry-project-slug
+# For multiple projects (recommended):
+SENTRY_FRONTEND_PROJECT=your-frontend-project-slug
+SENTRY_BACKEND_PROJECT=your-backend-project-slug
+# Or use single project (legacy):
+# SENTRY_PROJECT=your-sentry-project-slug
+
+# OpenAI API Configuration (for AI Error Explanations)
+# Get your API key from https://platform.openai.com/api-keys
+OPENAI_API_KEY=your-openai-api-key
 ```
 
 ### Setting up Google OAuth

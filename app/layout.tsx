@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Error Explainer - Sentry Dashboard",
-  description: "Dashboard for viewing Sentry errors",
+  title: "AI Error Explainer - Sentry Dashboard",
+  description: "AI-powered dashboard for viewing and understanding Sentry errors in plain English",
 };
 
 export default function RootLayout({
